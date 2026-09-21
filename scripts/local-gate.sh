@@ -79,21 +79,21 @@ if [ "$class" = code ]; then
 
   # validate: reads the plugin the way the engine will and refuses what it would.
   # Its capability list is the review surface, so a refusal here never reaches a PR.
-  if [ -f .claude-plugin/plugin.json ]; then
-    run validate claude plugin validate . --strict
+  if [ -f plugin/.claude-plugin/plugin.json ]; then
+    run validate claude plugin validate plugin --strict
   else
     mark validate unavailable
   fi
 
   # tests: `claude plugin test <dir>` loads the plugin from <dir> as well as
-  # scanning it, so the only node it takes here is the plugin root. A code-class
-  # small node therefore runs this gate exactly as the full lane does.
+  # scanning it, so the only node it takes is the plugin root, `plugin`. A
+  # code-class small node therefore runs this gate exactly as the full lane does.
   if ! compgen -G '**/*.test.ts' >/dev/null 2>&1 && [ -z "$(git ls-files '*.test.ts' '*.test.tsx')" ]; then
     mark tests unavailable
   elif [ "$lane" = small ]; then
     run tests claude plugin test "$small"
   else
-    run tests claude plugin test .
+    run tests claude plugin test plugin
   fi
 
 fi

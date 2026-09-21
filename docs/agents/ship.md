@@ -18,10 +18,10 @@ Bootstrap: npm ci && claude -p "/plugin-types"
 ## Local gate
 
 Location: scripts/local-gate.sh
-Small node: `.`, the repo root. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
+Small node: `plugin`, the plugin root. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
 Tripwires: None.
 
-`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. The plugin root is the repo root here, so `.` is the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping `deps`, `typecheck`, `validate` and `tests`. A test file goes under a directory `tsconfig.json`'s `include` names (`hooks`, `tests`), or typecheck does not see it.
+`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. `plugin` is therefore the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping `deps`, `typecheck`, `validate` and `tests`. A test file goes under a directory `tsconfig.json`'s `include` names (`plugin/hooks`, `tests`), or typecheck does not see it.
 
 ## CI
 
@@ -99,8 +99,8 @@ File as an issue labelled `needs-triage`.
 
 ## Docs sync
 
-Targets: README.md, .claude/CLAUDE.md, CONTEXT.md, docs/, docs/adr/
-Agent-facing: .claude/CLAUDE.md, docs/agents/, .claude/skills/
+Targets: README.md, CLAUDE.md, CONTEXT.md, docs/, docs/adr/
+Agent-facing: CLAUDE.md, docs/agents/, .claude/skills/
 
 ## Current docs
 
