@@ -1,6 +1,6 @@
 # ADR-0003: Sample every session, including CI, and fall back for identity
 
-Status: accepted, 2026-09-21
+Status: accepted, 2026-09-21; scope amended 2026-09-21 (see Amendment)
 Resolves: CONTEXT.md open decision 3 (whether to sample on CI and cloud sessions)
 
 ## Context
@@ -30,3 +30,35 @@ Samples are neither deduplicated nor smoothed here. Two concurrent sessions on o
 CI rows arrive with no `user.email` and are attributable only to the account. That is the honest shape: the utilization was real and the seat is unknown.
 
 `staging.stg_utilization_segments` joins the two metrics on `(user_email, usage_window, ts)` with no session key, so two concurrent sessions for one account emitting in the same second fan the join out. That defect is cc-otel's to fix and is not worked around here. `session.id` is emitted on every datapoint's resource so the fix has a key available the day it is written.
+
+## Amendment, 2026-09-21: a cloud sandbox is unreachable
+
+The decision above does not change. Its scope does: of the two non-interactive
+environments the Context names, a **cloud sandbox cannot reach the collector at
+all**, measured rather than inferred.
+
+Four routine fires from a cloud sandbox, under both the Trusted and the Custom
+network setting:
+
+```
+host=github.com            status=400 connect_s=0.000523 tls_s=0.192608
+host=<the collector>       status=000 connect_s=0.000288 tls_s=0.000000 curl_exit=56
+```
+
+github.com completes a TLS handshake and answers. The collector host is reset
+before any TLS, every time, and no row from any of the four fires reached
+`raw.metrics`. The sandbox egress proxy is allowing hosts and refusing ours
+specifically, so the block sits below anything the plugin controls: a hook's
+`$.http.fetch` fails exactly where that curl does.
+
+This is not worked around here. There is nothing in the plugin to change: the
+refusal is the sandbox's, and a tunnel or a relay would be a second delivery path
+to own for an environment whose utilization the account-wide windows already
+record from every other seat. A cloud sandbox therefore samples like any other
+session and delivers nothing: by the ordinary `no endpoint means no send` path of
+[ADR-0004](0004-transport-reads-the-console-env-block.md) where the policy does not
+reach it, and by the proxy refusing the connection where it does. Re-test with the
+curl above if that allowlist behaviour changes.
+
+A CI runner is untouched by this amendment: it was never measured unreachable, and
+the identity ladder above is what it exercises.
