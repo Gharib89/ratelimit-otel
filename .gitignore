@@ -1,0 +1,5 @@
+# Written by /plugin-types from the running Claude Code build; regenerate with
+# `claude -p "/plugin-types"` rather than committing a copy that goes stale.
+.claude/types/
+
+node_modules/

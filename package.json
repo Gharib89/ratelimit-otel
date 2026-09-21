@@ -1,0 +1,10 @@
+{
+  "name": "ratelimit-otel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling only. The plugin itself needs no Node: a hooks module reaches everything through `$`. TypeScript is here to typecheck it.",
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
