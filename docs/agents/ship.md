@@ -57,7 +57,7 @@ docs/contributing/coding-standards.md
 
 Proves: the hook's OTLP POST reaches a collector carrying the instrumentation scope, metric names and label keys the downstream collector attests on, rather than the shape a mock accepted.
 Applies when: the change touches what is emitted or how it is sent: metric names, scope, units, label keys, payload assembly, or the `$.http.fetch` call.
-Run: start an OTLP listener on 127.0.0.1:4318, then `claude -p "<prompt>" --plugin-dir .` with `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at it, and read the received payload.
+Run: start an OTLP listener on 127.0.0.1:4318, then `claude -p "<prompt>" --plugin-dir plugin` with `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at it, and read the received payload.
 Needs: a listener on 127.0.0.1:4318; detect with a connect probe before running.
 Without it: hand-off
 Also proven by CI: None.
@@ -67,7 +67,7 @@ Claims to probe: that a POST from inside a hook returns 2xx; that `$.http.fetch`
 
 Proves: `$.session.usage()` populates `rateLimits` against a real session with the kinds and fields the code assumes, rather than the fixture a test asserted on.
 Applies when: the change touches what is read off `$.session.usage()`, the sampler's timing, or how absent or unexpected `rateLimits` entries are handled.
-Run: `claude -p "<a prompt that draws one API response>" --plugin-dir .` with the sampler logging what it read.
+Run: `claude -p "<a prompt that draws one API response>" --plugin-dir plugin` with the sampler logging what it read.
 Needs: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` truthy in settings that outrank process env; detect by asserting the hook ran at all, because its absence is a silent no-op and not an error.
 Without it: hand-off
 Also proven by CI: None.
@@ -80,7 +80,7 @@ Reads: the squash subject
 In-PR requirement: None.
 Subject constraints: Conventional Commits, the type matching the issue's Kind dimension label (`fix`, `feat`, `docs`, `refactor`, `chore`).
 
-The release job bumps `.claude-plugin/plugin.json` and `marketplace.json` and tags. `claude plugin tag` refuses when those two disagree, so they move together in the release commit and never in a PR. That workflow does not exist yet.
+The release job bumps `plugin/.claude-plugin/plugin.json` and `marketplace.json` and tags. `claude plugin tag` refuses when those two disagree, so they move together in the release commit and never in a PR. That workflow does not exist yet.
 
 ## PR
 
@@ -89,7 +89,7 @@ Template: .github/pull_request_template.md
 ## Public surface
 
 - The emitted telemetry contract: instrumentation scope, metric names, type and unit, and label keys. A consumer outside this repo keeps only records matching these and drops the rest, so a rename breaks it silently.
-- `.claude-plugin/plugin.json`: name, version, and the `userConfig` schema a seat configures against.
+- `plugin/.claude-plugin/plugin.json`: name, version, and the `userConfig` schema a seat configures against.
 - `marketplace.json`: the entry the org console requires by name and pins by version.
 - The set of environment variables the module reads, which `claude plugin validate` prints and the console's env block must supply.
 
