@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "cloud-ship": {
+      "source": "gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cloud-ship/SKILL.md",
+      "computedHash": "c1acfb119fe91ecfe4f1f1437b91cdaad6ce51c2e43f292e80a2d98bc2ab5a34"
+    },
+    "setup-skills": {
+      "source": "gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/setup-skills/SKILL.md",
+      "computedHash": "b488d7d10b31e038c300319a27512c68b0aa301adf9ab9e7b40be1fe240e1e7d"
+    },
+    "ship": {
+      "source": "gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/ship/SKILL.md",
+      "computedHash": "bd37cecce0a29aba5500f031ef6b3f61e3782a16c180d56d74759aeb2144f5be"
+    }
+  }
+}
