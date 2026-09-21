@@ -54,11 +54,11 @@ specifically, so the block sits below anything the plugin controls: a hook's
 This is not worked around here. There is nothing in the plugin to change: the
 refusal is the sandbox's, and a tunnel or a relay would be a second delivery path
 to own for an environment whose utilization the account-wide windows already
-record from every other seat. A cloud sandbox therefore samples and sends nothing,
-by the ordinary `no endpoint means no send` path of
+record from every other seat. A cloud sandbox therefore samples like any other
+session and delivers nothing: by the ordinary `no endpoint means no send` path of
 [ADR-0004](0004-transport-reads-the-console-env-block.md) where the policy does not
-reach it, and by the proxy where it does. Re-test with the curl above if that
-allowlist behaviour changes.
+reach it, and by the proxy refusing the connection where it does. Re-test with the
+curl above if that allowlist behaviour changes.
 
 A CI runner is untouched by this amendment: it was never measured unreachable, and
 the identity ladder above is what it exercises.
