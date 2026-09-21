@@ -12,7 +12,7 @@ All three run in `scripts/local-gate.sh`. This repo has no CI, so a check that d
 
 ## Written standards
 
-None recorded in `CLAUDE.md` yet: `/init` has not run on this repo. The plugin-API invariants below stand in until it has, and move into `CLAUDE.md` when it does.
+None recorded in `.claude/CLAUDE.md` yet: `/init` has not run on this repo. The plugin-API invariants below stand in until it has, and move into `.claude/CLAUDE.md` when it does.
 
 ## Conventions a reviewer should know
 

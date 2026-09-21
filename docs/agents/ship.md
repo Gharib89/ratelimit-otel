@@ -18,10 +18,10 @@ Bootstrap: npm ci && claude -p "/plugin-types"
 ## Local gate
 
 Location: scripts/local-gate.sh
-Small node: `claude plugin test <dir>`, e.g. `claude plugin test hooks`. The runner takes a directory and nothing else, so the smallest node is the narrowest directory holding the test file. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
+Small node: `.`, the plugin directory. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
 Tripwires: None.
 
-`claude plugin test` has no test-name filter, so the small lane's saving is a narrower directory, not a single case. Keep test files in the directory their subject lives in.
+`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. The plugin root is the repo root here, so `.` is the only node the runner takes and the small lane narrows nothing on the tests gate: its saving is the gates a docs-class node skips. Keep test files in the directory their subject lives in.
 
 ## CI
 
@@ -99,8 +99,8 @@ File as an issue labelled `needs-triage`.
 
 ## Docs sync
 
-Targets: README.md, CLAUDE.md, CONTEXT.md, docs/, docs/adr/
-Agent-facing: CLAUDE.md, docs/agents/, .claude/skills/
+Targets: README.md, .claude/CLAUDE.md, CONTEXT.md, docs/, docs/adr/
+Agent-facing: .claude/CLAUDE.md, docs/agents/, .claude/skills/
 
 ## Current docs
 
