@@ -17,7 +17,7 @@ Use these terms in issue titles, test names, metric labels and ADRs. Where a ter
 - **Identity ladder** — the three-step read that gives a sample its `user.email`: `~/.claude.json`, then `OTEL_RESOURCE_ATTRIBUTES`, then `CLAUDE_USER_EMAIL`. A CI run has no `oauthAccount` on disk, and a sample with no email is still emitted.
 - **Seat** — one machine-and-user running Claude Code. The unit the fleet is counted in and the unit a config reaches.
 - **Instrumentation scope** — the OTel scope the records carry, `cc-otel.plugin`. A boundary term: the downstream collector keeps only records whose metric prefix it already allows and drops the rest as foreign, silently, so the emit contract is held with a system outside this repo.
-- **Manifest version** — the `version` string in `.claude-plugin/plugin.json`. Load-bearing, not bookkeeping: the fleet's rollout is measured off the `plugin_loaded` event's version, so a release that does not bump it is unmeasurable. Several plugins in production report an empty version.
+- **Manifest version** — the `version` string in `plugin/.claude-plugin/plugin.json`. Load-bearing, not bookkeeping: the fleet's rollout is measured off the `plugin_loaded` event's version, so a release that does not bump it is unmeasurable. Several plugins in production report an empty version.
 - **Silent no-op** — the plugin's characteristic failure. Without `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` the hooks module does not load and nothing reports it: no error, no log, no records. The flag now ships fleet-wide in the org console policy env block, but it remains the first hypothesis for "nothing happened", not the last.
 
 ## Decisions

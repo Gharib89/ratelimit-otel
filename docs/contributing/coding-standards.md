@@ -4,8 +4,8 @@ The standards every change in this repo is reviewed against. The `code-review` s
 
 ## Enforced by tooling
 
-- `tsc --noEmit`, per `tsconfig.json`, over `.claude/types` and the hooks module.
-- `claude plugin validate . --strict`, per `.claude-plugin/plugin.json`. It reads the plugin the way the engine will and refuses what the engine would, so its capability list is the surface a reviewer judges without opening the source.
+- `tsc --noEmit`, per `tsconfig.json`, over `.claude/types` and `plugin/hooks`.
+- `claude plugin validate plugin --strict`, per `plugin/.claude-plugin/plugin.json`. It reads the plugin the way the engine will and refuses what the engine would, so its capability list is the surface a reviewer judges without opening the source.
 - `gitleaks detect`, per the `secrets` gate in `scripts/local-gate.sh`, required in every lane.
 
 All three run in `scripts/local-gate.sh`. This repo has no CI, so a check that does not run there does not run at all.
@@ -24,6 +24,7 @@ The entries under the rule are ship's, true in every repo that installs it. The 
 - **`rateLimits` absent is not `rateLimits` zero.** It is empty at `session.start` and fills only after an API response; it is empty on an account with no subscription reading; a gateway returns `kind: "spend_limit"` in place of the two time windows; and `resetsAt` is optional. Guard on length and on the kind, never on a default.
 - **`$.env.get` takes a literal string, and `$` reaches only top-level functions.** The engine enumerates what a module reads, so a computed variable name defeats the listing `claude plugin validate` prints, and passing `$` to a closure fails validation outright.
 - **The generated `.claude/types/claude-code.d.ts` is the API reference.** Regenerate it with `claude -p "/plugin-types"` after a Claude Code update; never edit it. Public documentation does not cover function hooks at all and a docs search on this API returns confident wrong answers, so a claim about the plugin API is backed by the declarations or by a run, not by a citation.
+- **The plugin's root is `plugin/`, not the repo root.** `claude plugin validate` refuses a `CLAUDE.md` sitting at the plugin root (`not loaded as project context`), and under `--strict` that warning fails the gate. Keeping the plugin in a directory of its own leaves the repo's own `CLAUDE.md`, `docs/` and `scripts/` outside what the validator reads. `validate`, `test` and `--plugin-dir` all take `plugin`.
 - **A hooks module that does nothing is the expected failure of a missing flag.** `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` gates the whole feature and defaults off, and without it the module silently does not load: no error, no log. Check it first when nothing happens, and remember that console and policy env outrank user settings, which outrank process env.
 
 - **PR body: seven sections, in order.** `## Why the change`, `## Change outline`, `## Special things to note`, `## Needs attention`, `## Verification`, `## Review`, `## Attribution`. Every body carries all seven, template or not, because ship writes the headings it does not find; a missing one is a finding, and `## Attribution` last is what keeps a section rewrite from swallowing the footer.
