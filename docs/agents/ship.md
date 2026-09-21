@@ -18,10 +18,10 @@ Bootstrap: npm ci && claude -p "/plugin-types"
 ## Local gate
 
 Location: scripts/local-gate.sh
-Small node: `.`, the plugin directory. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
+Small node: `.`, the repo root. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
 Tripwires: None.
 
-`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. The plugin root is the repo root here, so `.` is the only node the runner takes and the small lane narrows nothing on the tests gate: its saving is the gates a docs-class node skips. Keep test files in the directory their subject lives in.
+`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. The plugin root is the repo root here, so `.` is the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping `deps`, `typecheck`, `validate` and `tests`. A test file goes under a directory `tsconfig.json`'s `include` names (`hooks`, `tests`), or typecheck does not see it.
 
 ## CI
 

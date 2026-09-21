@@ -85,8 +85,9 @@ if [ "$class" = code ]; then
     mark validate unavailable
   fi
 
-  # tests: `claude plugin test` takes a directory and no test-name filter, so the
-  # small lane narrows to a directory rather than to one case.
+  # tests: `claude plugin test <dir>` loads the plugin from <dir> as well as
+  # scanning it, so the only node it takes here is the plugin root. A code-class
+  # small node therefore runs this gate exactly as the full lane does.
   if ! compgen -G '**/*.test.ts' >/dev/null 2>&1 && [ -z "$(git ls-files '*.test.ts' '*.test.tsx')" ]; then
     mark tests unavailable
   elif [ "$lane" = small ]; then

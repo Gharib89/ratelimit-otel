@@ -8,11 +8,6 @@ import type { Hook, Register } from "claude-code";
  *
  * Declared at the top level because `$` may only be passed to a function
  * declared there.
- *
- * Measured on 2.1.278: in a `-p` run this line reaches neither the stream nor
- * `--debug-file`, because the session starts before the host is listening. A
- * `-p` host reports the load through the `init` event's `plugins` entry
- * instead, which carries the manifest version.
  */
 const announceLoad: Hook<"session.start"> = ($, e, next) => {
   $.ui.log(`${$.plugin.name} loaded`, { to: "debug" });
