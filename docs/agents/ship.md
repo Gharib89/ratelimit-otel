@@ -21,7 +21,7 @@ Location: scripts/local-gate.sh
 Small node: `plugin`, the plugin root. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
 Tripwires: None.
 
-`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. `plugin` is therefore the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping `deps`, `typecheck`, `validate` and `tests`. A test file goes under a directory `tsconfig.json`'s `include` names (`plugin/hooks`, `tests`), or typecheck does not see it.
+`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. `plugin` is therefore the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping `deps`, `typecheck`, `validate` and `tests`. A test file goes inside the plugin tree, under a directory `tsconfig.json`'s `include` names (`plugin/hooks`): the gate runs and counts tests there and nowhere else, so one outside it is neither typechecked nor run.
 
 ## CI
 

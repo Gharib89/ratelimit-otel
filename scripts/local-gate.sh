@@ -88,7 +88,9 @@ if [ "$class" = code ]; then
   # tests: `claude plugin test <dir>` loads the plugin from <dir> as well as
   # scanning it, so the only node it takes is the plugin root, `plugin`. A
   # code-class small node therefore runs this gate exactly as the full lane does.
-  if ! compgen -G '**/*.test.ts' >/dev/null 2>&1 && [ -z "$(git ls-files '*.test.ts' '*.test.tsx')" ]; then
+  # The presence check is scoped to that same tree on purpose: counting a test
+  # this invocation never scans would let the gate go green while skipping it.
+  if [ -z "$(git ls-files 'plugin/*.test.ts' 'plugin/*.test.tsx')" ]; then
     mark tests unavailable
   elif [ "$lane" = small ]; then
     run tests claude plugin test "$small"
