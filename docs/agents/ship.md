@@ -36,7 +36,7 @@ The repo is public, so Actions minutes are unmetered and nothing argues for batc
 ### Copilot
 
 Login: copilot-pull-request-reviewer[bot]
-Trigger: on-push
+Trigger: on-request
 Request: None.
 Workflow: None.
 Cap: 3
@@ -45,7 +45,7 @@ Gating: yes
 Fallback-for: None.
 Instructions: .github/copilot-instructions.md
 
-The repository ruleset `copilot-review-on-push` carries a `copilot_code_review` rule with `review_on_push: true` scoped to `~DEFAULT_BRANCH`, so the host answers `review_on_push: true` and `on-push` is the only admissible trigger; `on-request` and `auto-once` would now make preflight refuse this profile. Every push to an open PR draws a fresh round the host starts, so `Request:` stays `None.` and `Cap: 3` is a budget on ship's engagement alone: past three rounds ship stops driving the loop while Copilot keeps reviewing. The rule leaves `review_draft_pull_requests: false`, which costs nothing here because `open-pr` opens non-draft PRs.
+The repository ruleset `copilot-review-on-open` carries a `copilot_code_review` rule with `review_on_push: false` scoped to `~DEFAULT_BRANCH`, so the host answers `review_on_push: false` and only `on-request` or `auto-once` is admissible; `on-push` would make preflight refuse this profile. The rule still draws a round when the PR opens, and `on-request` is the trigger that makes that free round the loop's round 1: `Cap: 3` buys the remaining two through the host's request-a-reviewer call, which needs no comment phrase, so `Request:` reads `None.`. `auto-once` would take the opening round and stop there. The rule leaves `review_draft_pull_requests: false`, which costs nothing here because `open-pr` opens non-draft PRs. Flipping `review_on_push` back to `true` is a profile change, not just a setting change.
 
 ## Coding standards
 
