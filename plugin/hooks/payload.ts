@@ -20,6 +20,59 @@ export type Identity = {
   sessionId: string;
 };
 
+/**
+ * Reads `user.email` out of an `OTEL_RESOURCE_ATTRIBUTES` value: comma-separated
+ * `key=value` pairs. The key is matched whole, so `other.user.email=` is not a
+ * hit, and both halves are trimmed, because the variable is written by hand.
+ */
+function emailFromResourceAttributes(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  for (const pair of value.split(",")) {
+    const split = pair.indexOf("=");
+    if (split < 0) continue;
+    if (pair.slice(0, split).trim() !== "user.email") continue;
+    const email = pair.slice(split + 1).trim();
+    if (email !== "") return email;
+  }
+  return undefined;
+}
+
+const stringField = (source: unknown, field: string): string | undefined => {
+  const value = (source as Record<string, unknown> | undefined)?.[field];
+  return typeof value === "string" ? value : undefined;
+};
+
+/**
+ * ADR-0003's identity ladder, first hit wins, over the three sources a hook
+ * reads for it. The account uuid is carried whenever `~/.claude.json` has one,
+ * independently of the ladder, since it is a resource attribute of its own
+ * (ADR-0001) and the two later rungs cannot supply it.
+ *
+ * @param claudeJson the parsed `~/.claude.json`, or `undefined` when unreadable
+ * @param resourceAttributes the `OTEL_RESOURCE_ATTRIBUTES` value
+ * @param claudeUserEmail the `CLAUDE_USER_EMAIL` value
+ * @param sessionId the session's id, always emitted
+ */
+export function identityFrom(
+  claudeJson: unknown,
+  resourceAttributes: string | undefined,
+  claudeUserEmail: string | undefined,
+  sessionId: string,
+): Identity {
+  const account = (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
+  const email =
+    stringField(account, "emailAddress")?.toLowerCase() ??
+    emailFromResourceAttributes(resourceAttributes) ??
+    claudeUserEmail;
+  const accountId = stringField(account, "accountUuid");
+
+  return {
+    ...(email === undefined ? {} : { email }),
+    ...(accountId === undefined ? {} : { accountId }),
+    sessionId,
+  };
+}
+
 type AttributeValue = { stringValue: string };
 type Attribute = { key: string; value: AttributeValue };
 
