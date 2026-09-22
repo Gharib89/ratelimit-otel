@@ -1,5 +1,6 @@
 {
   "name": "ratelimit-otel",
   "owner": { "name": "Ahmed Gharib" },
+  "description": "The ratelimit-otel plugin: Claude Code rate-limit window utilization, exported as OTLP.",
   "plugins": [{ "name": "ratelimit-otel", "source": "./plugin" }]
 }
