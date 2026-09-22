@@ -7,8 +7,9 @@ The standards every change in this repo is reviewed against. The `code-review` s
 - `tsc --noEmit`, per `tsconfig.json`, over `.claude/types` and `plugin/hooks`.
 - `claude plugin validate plugin --strict`, per `plugin/.claude-plugin/plugin.json`. It reads the plugin the way the engine will and refuses what the engine would, so its capability list is the surface a reviewer judges without opening the source.
 - `gitleaks detect`, per the `secrets` gate in `scripts/local-gate.sh`, required in every lane.
+- `node scripts/set-manifest-version.mjs`, per the `release` gate in `scripts/local-gate.sh`. The manifest writer runs nowhere else until a release fires it, and the way it fails is by writing nothing, so the gate drives it against a throwaway manifest and reads the version back.
 
-All three run in `scripts/local-gate.sh`. No workflow judges a PR: `.github/workflows/release.yml` is the only one and it runs on `main` after the merge, so a check that does not run in the local gate does not run on a PR at all.
+All of them run in `scripts/local-gate.sh`. No workflow judges a PR: `.github/workflows/release.yml` is the only one and it runs on `main` after the merge, so a check that does not run in the local gate does not run on a PR at all.
 
 ## Written standards
 

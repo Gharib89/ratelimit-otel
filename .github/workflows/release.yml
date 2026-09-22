@@ -34,10 +34,17 @@ jobs:
           cache: npm
       - run: npm ci
       # `claude plugin tag` is the release's agreement gate, invoked from
-      # .releaserc.json. The local gate calls `claude` the same ambient way, so
-      # the runner installs the CLI rather than the repo depending on it, and
-      # unpinned for the same reason: a CLI change that breaks `plugin tag`
-      # should fail the release loudly, which is what a gate is for.
+      # .releaserc.json as `--dry-run --force`: it runs mid-prepare, after the
+      # version is written and before @semantic-release/git commits, so without
+      # `--force` it refuses the dirty tree, and without `--dry-run` it would
+      # create a second tag beside the one semantic-release already makes from
+      # `tagFormat`. `--force` skips those two checks only; the manifest and
+      # marketplace agreement it exists for is still validated.
+      #
+      # The local gate calls `claude` as an ambient tool, so the runner installs
+      # the CLI rather than the repo depending on it, and unpinned for the same
+      # reason: a CLI change that breaks `plugin tag` should fail the release
+      # loudly, which is what a gate is for.
       - run: npm install --global @anthropic-ai/claude-code
       - run: npx semantic-release
         env:
