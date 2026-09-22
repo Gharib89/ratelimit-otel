@@ -183,7 +183,12 @@ export function buildPayload(
     // `asDouble: null` and be a malformed datapoint delivered silently.
     const resetsAt = limit.resetsAt === undefined ? NaN : Date.parse(limit.resetsAt);
     if (!Number.isNaN(resetsAt)) {
-      resetInSeconds.push({ timeUnixNano, asDouble: Math.floor((resetsAt - now) / 1000), attributes });
+      // Rounded up, not down: a consumer reconstructing the reset instant as
+      // `ts + reset_in_seconds` bins it to five minutes, and a real window resets
+      // on a five-minute boundary, so a countdown short by even the sub-second
+      // part lands a whole bucket early. `ceil` puts the reconstruction in
+      // `(reset, reset + 1s]`, inside the window's own bucket.
+      resetInSeconds.push({ timeUnixNano, asDouble: Math.ceil((resetsAt - now) / 1000), attributes });
     }
   }
 
