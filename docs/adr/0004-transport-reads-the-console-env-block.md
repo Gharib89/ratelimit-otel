@@ -43,7 +43,7 @@ against a live collector rather than a reading of it.
 The transport carries no configuration of its own. It reads the endpoint and the
 `Authorization` header out of the console telemetry env block at send time, POSTs
 **OTLP JSON** to `<endpoint>/v1/metrics`, and **skips the sample when the endpoint
-is absent**.
+is unset or empty**.
 
 - **No config artifact.** The plugin has no successor to the wrapper's config file
   and no credential of any kind lives in this repo. The values exist only in the
@@ -54,10 +54,11 @@ is absent**.
   on the same `/v1/metrics` path, so the plugin stays dependency-free with no
   protobuf encoder to carry.
 - **No endpoint means no send.** Where the console policy does not reach a scope,
-  `$.env.get` returns nothing and the sample is skipped, not queued and not
-  retried. This does not narrow
+  `$.env.get` returns nothing, and where it reaches one without the endpoint set it
+  returns an empty string; both are no endpoint, and the sample is skipped, not
+  queued and not retried. This does not narrow
   [ADR-0003](0003-sample-every-session-with-an-identity-ladder.md): every session
-  still samples, and what a missing endpoint removes is the delivery, not the
+  still samples, and what an unset or empty endpoint removes is the delivery, not the
   sample or the session it came from.
 
 This repo is public. The mechanism is named here; the endpoint host and the header
@@ -72,7 +73,7 @@ policy moves follows it. The cost is that the plugin cannot be pointed anywhere
 by itself, which is deliberate: an endpoint this repo could set is an endpoint this
 repo would have to hold.
 
-Skipping on a missing endpoint is the plugin's **second silent no-op**, beside the
+Skipping on an unset or empty endpoint is the plugin's **second silent no-op**, beside the
 missing `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`. A scope without the policy produces no
 records and reports nothing, which is correct and is also the second hypothesis for
 "nothing happened". It must not be logged as an error on every sample: the
