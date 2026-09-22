@@ -1,6 +1,6 @@
 # ADR-0001: Keep the wrapper's metric names, values and attribute vocabulary
 
-Status: accepted, 2026-09-21
+Status: accepted, 2026-09-21; the countdown's formula amended 2026-09-22 (see [ADR-0002](0002-emit-both-the-instant-and-the-countdown.md)'s Amendment)
 Resolves: CONTEXT.md open decision 1 (instrumentation scope and metric names)
 
 ## Context

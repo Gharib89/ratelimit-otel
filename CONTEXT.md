@@ -26,7 +26,7 @@ Use these terms in issue titles, test names, metric labels and ADRs. Where a ter
 The emit contract is settled. Read these before changing anything that leaves the process:
 
 - [ADR-0001](docs/adr/0001-telemetry-contract.md) — metric names, values, scope and attributes. Names are a contract with the collector, and a wrong one is dropped silently rather than rejected.
-- [ADR-0002](docs/adr/0002-emit-both-the-instant-and-the-countdown.md) — `reset_in_seconds` stays a metric and `resets_at` is added as an attribute, so the producer can change before the consumer.
+- [ADR-0002](docs/adr/0002-emit-both-the-instant-and-the-countdown.md) — `reset_in_seconds` stays a metric and `resets_at` is added as an attribute, so the producer can change before the consumer. Amended: the countdown rounds up, so the reconstruction bins to its own window.
 - [ADR-0003](docs/adr/0003-sample-every-session-with-an-identity-ladder.md) — sample every session including CI, with an identity ladder and a five-minute delivery floor. Amended: a cloud sandbox is unreachable by measurement.
 - [ADR-0004](docs/adr/0004-transport-reads-the-console-env-block.md) — the transport reads the console telemetry env block, POSTs OTLP JSON, and skips where there is no endpoint. No config artifact, no credential in this repo.
 

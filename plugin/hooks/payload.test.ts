@@ -337,10 +337,9 @@ test("an unparseable resetsAt keeps the attribute and emits no countdown", () =>
 });
 
 test("the countdown never lands below the reset instant, so the reconstruction bins to its own window", () => {
-  // cc-otel reconstructs the window's end as `ts + reset_in_seconds`, bucketed to
-  // five minutes, and a real window resets on a five-minute boundary. A sample
-  // taken with a fractional second on the clock therefore has to round the
-  // countdown up, or the reconstruction lands a whole bucket early.
+  // ADR-0002's amendment: the consumer reconstructs the window's end as
+  // `ts + reset_in_seconds` binned to five minutes, so a countdown short by the
+  // sub-second part bins a whole bucket early. These are its measured numbers.
   const boundary = "2026-09-22T10:20:00.000Z";
   const now = Date.parse(boundary) - 16_418_150; // 16418.15 s before the reset
   const payload = buildPayload(
@@ -349,7 +348,7 @@ test("the countdown never lands below the reset instant, so the reconstruction b
     now,
   );
 
-  const countdown = payload?.resourceMetrics[0].scopeMetrics[0].metrics[1].gauge.dataPoints[0];
+  const countdown = payload?.resourceMetrics[0].scopeMetrics[0].metrics[1]?.gauge.dataPoints[0];
   expect(countdown?.asDouble).toBe(16_419);
   expect(now + (countdown?.asDouble ?? 0) * 1000).toBeGreaterThanOrEqual(Date.parse(boundary));
 });
