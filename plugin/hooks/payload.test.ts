@@ -1,5 +1,5 @@
 import { expect, test } from "claude-code/testing";
-import { accountAttributesFrom, buildPayload, identityFrom } from "./payload";
+import { accountAttributesFrom, buildPayload, headersFrom, identityFrom } from "./payload";
 
 // 2025-09-21T19:20:00.000Z, with the window resetting 1800 seconds later.
 const NOW = 1_758_482_400_000;
@@ -246,4 +246,19 @@ test("the account attributes ride the resource, beside the identity's own", () =
     { key: "session.id", value: { stringValue: "sess-1" } },
     { key: "seat.tier", value: { stringValue: "enterprise" } },
   ]);
+});
+
+test("the headers split on the first = alone, so a token's padding stays in the value", () => {
+  expect(headersFrom("Authorization=Bearer abc==")).toEqual({ Authorization: "Bearer abc==" });
+  expect(headersFrom(" Authorization = Bearer abc , X-Scope=fleet ")).toEqual({
+    Authorization: "Bearer abc",
+    "X-Scope": "fleet",
+  });
+});
+
+test("a header pair with no = or no name is dropped, and no headers is an empty set", () => {
+  expect(headersFrom("Authorization")).toEqual({});
+  expect(headersFrom("=lonely")).toEqual({});
+  expect(headersFrom(undefined)).toEqual({});
+  expect(headersFrom("")).toEqual({});
 });

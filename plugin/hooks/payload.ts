@@ -201,3 +201,21 @@ export function buildPayload(
     ],
   };
 }
+
+/**
+ * Reads `OTEL_EXPORTER_OTLP_HEADERS` into request headers: the same
+ * comma-separated `key=value` list, split on the first `=` alone so a bearer
+ * token's own padding stays in the value. Values cross verbatim, undecoded,
+ * which is the form ADR-0004 measured a delivery on.
+ */
+export function headersFrom(value: string | undefined): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (value === undefined) return headers;
+  for (const pair of value.split(",")) {
+    const split = pair.indexOf("=");
+    if (split < 0) continue;
+    const name = pair.slice(0, split).trim();
+    if (name !== "") headers[name] = pair.slice(split + 1).trim();
+  }
+  return headers;
+}
