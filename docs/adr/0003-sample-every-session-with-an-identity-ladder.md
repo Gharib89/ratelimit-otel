@@ -90,7 +90,9 @@ with no API response at all, which the non-empty `rateLimits` gate already drops
 
 Which exits reach the hook was measured, not assumed, on Claude Code 2.1.278: a
 copy of the plugin under its own name logging `e.reason` through `--debug-file`,
-interactive paths driven through a pty.
+interactive paths driven through a pty. The table is the paths that were driven,
+not the whole of `ExitReason`: `resume` and `logout` are in the enum and were not
+driven, so nothing here claims them either way.
 
 | Exit path | fires | `reason` |
 |---|---|---|
@@ -108,9 +110,11 @@ interactive paths driven through a pty.
 including `/clear`, so the sample is attributed to the session it belongs to and
 nothing is threaded through from the event.
 
-A `/clear` or a resume is a session end, so a seat that clears often delivers on
-each clear. That is bounded by human speed and it is the same honest reading as
-any other: the cleared session's windows were real.
+A `/clear` is a session end, measured, so a seat that clears often delivers on each
+clear rather than once per terminal session. That is bounded by human speed and it
+is the same honest reading as any other: the cleared session's windows were real.
+`resume` and `logout` are the two undriven reasons; if they fire the hook they read
+the same way, and nothing downstream distinguishes them.
 
 Every session exit now carries one POST, bounded by the engine's 1.5 s
 `session.end` budget. Measured against the real collector the hook settled in

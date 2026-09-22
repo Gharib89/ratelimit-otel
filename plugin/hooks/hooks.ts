@@ -31,13 +31,13 @@ let accountAttributesSentFor: string | undefined;
  * mode here is silent by design (ADR-0004) because the sampler runs in every
  * session on every seat, so a logged error would repeat on every seat the
  * console policy does not reach.
+ *
+ * `floor` is the caller's: which triggers the floor governs is a trigger's own
+ * question, not the sampler's. A delivery that lands sets the floor either way.
  */
-async function sampleAndDeliver(
-  $: EngineInterface,
-  options: { waiveFloor?: boolean } = {},
-): Promise<void> {
+async function sampleAndDeliver($: EngineInterface, floor: "hold" | "waive"): Promise<void> {
   const now = await $.clock.now();
-  if (options.waiveFloor !== true) {
+  if (floor === "hold") {
     const lastDeliveryAt = await $.store.get(LAST_DELIVERY_KEY);
     if (typeof lastDeliveryAt === "number" && now - lastDeliveryAt < DELIVERY_FLOOR_MS) return;
   }
@@ -110,14 +110,14 @@ async function sampleAndDeliver(
 const startSession: Hook<"session.start"> = ($, e, next) => {
   $.ui.log(`${$.plugin.name} loaded`, { to: "debug" });
   $.clock.every(SAMPLE_INTERVAL_MS, () => {
-    void sampleAndDeliver($);
+    void sampleAndDeliver($, "hold");
   });
   return next(e);
 };
 
 /** A completed turn is what guarantees a response landed, so it is where a sample is taken. */
 const sampleOnTurn: Hook<"turn.complete"> = async ($, e, next) => {
-  await sampleAndDeliver($);
+  await sampleAndDeliver($, "hold");
   return next(e);
 };
 
@@ -134,7 +134,7 @@ const sampleOnTurn: Hook<"turn.complete"> = async ($, e, next) => {
  * exit now carries one POST, bounded by the engine's 1.5 s `session.end` budget.
  */
 const sampleOnSessionEnd: Hook<"session.end"> = async ($, e, next) => {
-  await sampleAndDeliver($, { waiveFloor: true });
+  await sampleAndDeliver($, "waive");
   return next(e);
 };
 
