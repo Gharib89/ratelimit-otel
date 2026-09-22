@@ -1,0 +1,51 @@
+# Releases the plugin: grades the bump from the squash subject's Conventional
+# type, writes it into the plugin manifest, commits that to `main` and tags.
+#
+# `push` to `main` only. A `pull_request` trigger here would make the manifest
+# version something a PR carries, which the ship profile's `In-PR requirement:`
+# says it never is.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release commit and the tag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # semantic-release grades from the full tag history
+          persist-credentials: false # let semantic-release supply its own token
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      # `claude plugin tag` is the release's agreement gate, invoked from
+      # .releaserc.json as `--dry-run --force`: it runs mid-prepare, after the
+      # version is written and before @semantic-release/git commits, so without
+      # `--force` it refuses the dirty tree, and without `--dry-run` it would
+      # create a second tag beside the one semantic-release already makes from
+      # `tagFormat`. `--force` skips those two checks only; the manifest and
+      # marketplace agreement it exists for is still validated.
+      #
+      # The local gate calls `claude` as an ambient tool, so the runner installs
+      # the CLI rather than the repo depending on it, and unpinned for the same
+      # reason: a CLI change that breaks `plugin tag` should fail the release
+      # loudly, which is what a gate is for.
+      - run: npm install --global @anthropic-ai/claude-code
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

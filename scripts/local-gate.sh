@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Local gate: every check this repo runs before a PR opens. This repo has no CI,
-# so every gate below runs here and nothing defers.
+# Local gate: every check this repo runs before a PR opens. No workflow judges
+# a PR, so every gate below runs here and nothing defers.
 # Written by setup-skills; owned by the repo, which is who edits it from here.
 #
 #   scripts/local-gate.sh [--small <node>] [--base <ref>]
@@ -38,6 +38,24 @@ declare -A gates
 log=$(mktemp); trap 'rm -f "$log"' EXIT
 run()  { local name=$1; shift; if "$@" >"$log" 2>&1; then gates[$name]=pass; else gates[$name]=fail; tail -n 40 "$log" >&2; fi; }
 mark() { gates[$1]=$2; }   # mark <name> deferred-to-ci|unavailable
+
+# The `release` gate's body, beside the other helpers so the gates below stay a
+# uniform list of `run` lines. The writer resolves the manifest relative to its
+# own cwd, so the probe is a throwaway tree with the manifest at that same path.
+manifest="plugin/.claude-plugin/plugin.json"
+writer="scripts/set-manifest-version.mjs"
+probe_version=9.9.9
+manifest_writer_writes() {
+  local root=$PWD d rc
+  d=$(mktemp -d) || return 1
+  mkdir -p "$d/${manifest%/*}"
+  cp "$root/$manifest" "$d/$manifest" || { rm -rf "$d"; return 1; }
+  ( cd "$d" && node "$root/$writer" "$probe_version" \
+      && [ "$(jq -r .version "$manifest")" = "$probe_version" ] )
+  rc=$?
+  rm -rf "$d"
+  return $rc
+}
 
 # The small lane carries two classes of node, per the profile's `Small node:`.
 # A directory is a test node; anything else is the path of a changed document,
@@ -96,6 +114,17 @@ if [ "$class" = code ]; then
     run tests claude plugin test "$small"
   else
     run tests claude plugin test plugin
+  fi
+
+  # release: scripts/set-manifest-version.mjs runs only inside a release, so no
+  # other gate here would ever execute it, and the way it fails is by writing
+  # nothing at all. manifest_writer_writes drives it against a throwaway copy of
+  # the manifest and reads the version back, so a writer that has stopped
+  # writing is caught on the PR rather than on the release that needed it.
+  if [ -f "$writer" ] && [ -f "$manifest" ]; then
+    run release manifest_writer_writes
+  else
+    mark release unavailable
   fi
 
 fi

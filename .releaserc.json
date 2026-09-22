@@ -1,0 +1,18 @@
+{
+  "branches": ["main"],
+  "tagFormat": "ratelimit-otel--v${version}",
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "node scripts/set-manifest-version.mjs ${nextRelease.version} && claude plugin tag plugin --dry-run --force"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      { "assets": ["plugin/.claude-plugin/plugin.json"] }
+    ]
+  ]
+}
