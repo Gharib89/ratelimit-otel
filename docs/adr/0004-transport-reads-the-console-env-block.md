@@ -43,7 +43,7 @@ against a live collector rather than a reading of it.
 The transport carries no configuration of its own. It reads the endpoint and the
 `Authorization` header out of the console telemetry env block at send time, POSTs
 **OTLP JSON** to `<endpoint>/v1/metrics`, and **skips the sample when the endpoint
-is absent**.
+is unset or empty**.
 
 - **No config artifact.** The plugin has no successor to the wrapper's config file
   and no credential of any kind lives in this repo. The values exist only in the
