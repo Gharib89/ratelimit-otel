@@ -43,6 +43,7 @@ mark() { gates[$1]=$2; }   # mark <name> deferred-to-ci|unavailable
 # uniform list of `run` lines. The writer resolves the manifest relative to its
 # own cwd, so the probe is a throwaway tree with the manifest at that same path.
 manifest="plugin/.claude-plugin/plugin.json"
+marketplace=".claude-plugin/marketplace.json"
 writer="scripts/set-manifest-version.mjs"
 probe_version=9.9.9
 manifest_writer_writes() {
@@ -125,6 +126,29 @@ if [ "$class" = code ]; then
     run release manifest_writer_writes
   else
     mark release unavailable
+  fi
+
+  # marketplace: the root manifest is engine-read public surface (docs/agents/ship.md,
+  # ## Public surface) and the `validate` gate above is scoped to the plugin root, so
+  # nothing else asks it. --strict is what fails a missing marketplace description,
+  # which plain validate reports as a warning and passes.
+  if [ -f "$marketplace" ]; then
+    run marketplace claude plugin validate . --strict
+  else
+    mark marketplace unavailable
+  fi
+
+  # tag: `claude plugin tag` is the release's agreement gate, run from
+  # .releaserc.json's prepareCmd with these same flags. It refuses when the
+  # manifest version and the enclosing marketplace entry disagree, so without
+  # this gate that drift fails the release on `main` rather than the PR that
+  # introduced it. --dry-run creates no tag; --force skips the dirty-tree and
+  # tag-exists checks only, which the release needs mid-prepare and which would
+  # otherwise make this gate answer about the worktree instead of the manifests.
+  if [ -f "$manifest" ] && [ -f "$marketplace" ]; then
+    run tag claude plugin tag plugin --dry-run --force
+  else
+    mark tag unavailable
   fi
 
 fi

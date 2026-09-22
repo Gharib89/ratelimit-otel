@@ -21,7 +21,7 @@ Location: scripts/local-gate.sh
 Small node: `plugin`, the plugin root. Docs-class: the path of the changed document, e.g. `docs/adr/0001-metric-scope.md`.
 Tripwires: None.
 
-`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. `plugin` is therefore the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping `deps`, `typecheck`, `validate` and `tests`. A test file goes inside the plugin tree, under a directory `tsconfig.json`'s `include` names (`plugin/hooks`): the gate runs and counts tests there and nowhere else, so one outside it is neither typechecked nor run.
+`claude plugin test <dir>` loads the plugin from `<dir>` as well as scanning it for tests, so a directory below the plugin root is refused (`no hooks module to load`) rather than run as a narrower node. `plugin` is therefore the only node the runner takes: a code-class small node runs the full lane verbatim, and only a docs-class node saves anything, skipping every code-class gate. A test file goes inside the plugin tree, under a directory `tsconfig.json`'s `include` names (`plugin/hooks`): the gate runs and counts tests there and nowhere else, so one outside it is neither typechecked nor run.
 
 ## CI
 
@@ -84,7 +84,7 @@ Reads: the squash subject
 In-PR requirement: None.
 Subject constraints: Conventional Commits, the type matching the issue's Kind dimension label (`fix`, `feat`, `docs`, `refactor`, `chore`).
 
-`.github/workflows/release.yml` runs semantic-release on a push to `main`, which grades the bump from the squash subject, writes the manifest version and tags `ratelimit-otel--v<version>`; `.releaserc.json` has the steps. A PR therefore carries no version edit. `claude plugin tag` runs in the release as the agreement gate: it refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR. This repo carries no `marketplace.json`, so the gate has nothing to compare and always passes; it is wired now so it already holds when that file lands.
+`.github/workflows/release.yml` runs semantic-release on a push to `main`, which grades the bump from the squash subject, writes the manifest version and tags `ratelimit-otel--v<version>`; `.releaserc.json` has the steps. A PR therefore carries no version edit. `claude plugin tag` runs in the release as the agreement gate: it refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR. The repo carries `.claude-plugin/marketplace.json`, whose entry carries no `version` (CONTEXT.md, **Where this is going**), so today the gate has nothing that can drift. The local gate's `tag` gate runs the same call, so a version added to the entry later fails the PR rather than the release on `main`.
 
 ## PR
 
@@ -94,7 +94,7 @@ Template: .github/pull_request_template.md
 
 - The emitted telemetry contract: instrumentation scope, metric names, type and unit, and label keys. A consumer outside this repo keeps only records matching these and drops the rest, so a rename breaks it silently.
 - `plugin/.claude-plugin/plugin.json`: name, version, and the `userConfig` schema a seat configures against.
-- `marketplace.json`, once distribution stops being manual (CONTEXT.md, **Where this is going**): the entry the org console requires by name and pins by version.
+- `.claude-plugin/marketplace.json`: the marketplace `name` and the entry's `name`, which are the coordinate `claude plugin install ratelimit-otel@ratelimit-otel` resolves and the org console pins in `extraKnownMarketplaces` and `enabledPlugins`, so renaming either orphans every installed seat; and the entry's `source`, the path the plugin is read from.
 - The set of environment variables the module reads, which `claude plugin validate` prints and the console's env block must supply.
 
 ## Triage
