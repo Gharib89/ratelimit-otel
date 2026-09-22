@@ -57,8 +57,8 @@ docs/contributing/coding-standards.md
 
 Proves: the hook's OTLP POST reaches a collector carrying the instrumentation scope, metric names and label keys the downstream collector attests on, rather than the shape a mock accepted.
 Applies when: the change touches what is emitted or how it is sent: metric names, scope, units, label keys, payload assembly, or the `$.http.fetch` call.
-Run: start an OTLP listener on 127.0.0.1:4318, then `claude -p "<prompt>" --plugin-dir plugin` with `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at it, and read the received payload.
-Needs: a listener on 127.0.0.1:4318; detect with a connect probe before running.
+Run: `claude -p "<prompt>" --plugin-dir plugin`, then read the delivery off `--debug-file` (`$.http.fetch (ratelimit-otel): POST <endpoint>/v1/metrics` and its status). To read the payload itself, run a copy of the plugin that logs it before the POST; a copy shares the store file, so clear `last_delivery_at` or the floor answers instead of the collector.
+Needs: a seat the console policy reaches, which is what supplies the endpoint; detect by asserting a POST line in the debug file. On a seat the policy does not reach, an OTLP listener on 127.0.0.1:4318 with `OTEL_EXPORTER_OTLP_ENDPOINT` exported stands in; on a seat it does reach, that export is outranked and the listener receives nothing.
 Without it: hand-off
 Also proven by CI: None.
 Claims to probe: that a POST from inside a hook returns 2xx; that `$.http.fetch` is not blocked here by the `allow_web_fetch` policy or by session-level nonessential-traffic disablement.
