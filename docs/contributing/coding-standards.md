@@ -8,7 +8,7 @@ The standards every change in this repo is reviewed against. The `code-review` s
 - `claude plugin validate plugin --strict`, per `plugin/.claude-plugin/plugin.json`. It reads the plugin the way the engine will and refuses what the engine would, so its capability list is the surface a reviewer judges without opening the source.
 - `gitleaks detect`, per the `secrets` gate in `scripts/local-gate.sh`, required in every lane.
 
-All three run in `scripts/local-gate.sh`. This repo has no CI, so a check that does not run there does not run at all.
+All three run in `scripts/local-gate.sh`. No workflow judges a PR: `.github/workflows/release.yml` is the only one and it runs on `main` after the merge, so a check that does not run in the local gate does not run on a PR at all.
 
 ## Written standards
 

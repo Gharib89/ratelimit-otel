@@ -22,9 +22,7 @@ jobs:
     name: release
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push the release commit and tag, publish the release
-      issues: write # comment on released issues
-      pull-requests: write # comment on released pull requests
+      contents: write # push the release commit and the tag
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,8 +35,10 @@ jobs:
       - run: npm ci
       # `claude plugin tag` is the release's agreement gate, invoked from
       # .releaserc.json. The local gate calls `claude` the same ambient way, so
-      # the runner installs the CLI rather than the repo depending on it.
-      - run: npm install --global @anthropic-ai/claude-code@2.1.278
+      # the runner installs the CLI rather than the repo depending on it, and
+      # unpinned for the same reason: a CLI change that breaks `plugin tag`
+      # should fail the release loudly, which is what a gate is for.
+      - run: npm install --global @anthropic-ai/claude-code
       - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

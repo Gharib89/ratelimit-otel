@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Local gate: every check this repo runs before a PR opens. This repo has no CI,
-# so every gate below runs here and nothing defers.
+# Local gate: every check this repo runs before a PR opens. No workflow judges
+# a PR, so every gate below runs here and nothing defers.
 # Written by setup-skills; owned by the repo, which is who edits it from here.
 #
 #   scripts/local-gate.sh [--small <node>] [--base <ref>]
@@ -96,6 +96,28 @@ if [ "$class" = code ]; then
     run tests claude plugin test "$small"
   else
     run tests claude plugin test plugin
+  fi
+
+  # release: scripts/set-manifest-version.mjs runs only inside a release, so no
+  # other gate here would ever execute it, and the way it fails is by writing
+  # nothing at all. Drive it against a throwaway copy of the manifest and read
+  # the version back, so a writer that has stopped writing is caught on the PR
+  # rather than on the release that needed it.
+  manifest_writer_writes() {
+    local root=$PWD d rc
+    d=$(mktemp -d) || return 1
+    mkdir -p "$d/plugin/.claude-plugin"
+    cp "$root/plugin/.claude-plugin/plugin.json" "$d/plugin/.claude-plugin/plugin.json" || { rm -rf "$d"; return 1; }
+    ( cd "$d" && node "$root/scripts/set-manifest-version.mjs" 9.9.9 \
+        && [ "$(jq -r .version plugin/.claude-plugin/plugin.json)" = 9.9.9 ] )
+    rc=$?
+    rm -rf "$d"
+    return $rc
+  }
+  if [ -f scripts/set-manifest-version.mjs ] && [ -f plugin/.claude-plugin/plugin.json ]; then
+    run release manifest_writer_writes
+  else
+    mark release unavailable
   fi
 
 fi

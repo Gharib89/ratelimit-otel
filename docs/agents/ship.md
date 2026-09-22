@@ -26,10 +26,10 @@ Tripwires: None.
 ## CI
 
 Legs: None.
-No-checks legal: yes; `.github/workflows/release.yml` is the repo's only workflow and it triggers on `push` to `main` alone, so no PR will ever report a check. With `Legs: None.` that is the pair dropping `ci-wait`'s no-checks grace to zero.
+No-checks legal: yes; no workflow triggers on `pull_request`, so no PR will ever report a check. With `Legs: None.` that is the pair dropping `ci-wait`'s no-checks grace to zero.
 Push policy: Default.
 
-The repo is public, so Actions minutes are unmetered and nothing argues for batching pushes. Every check a PR is judged on therefore runs in the local gate. The release workflow is deliberately not a leg: it runs after the merge, on a ref no PR has, so a `Legs:` entry naming it would leave `ci-wait` waiting for a check that never arrives. When a `pull_request` workflow lands, re-run `/setup-skills` so the legs and any `defer-to-ci` verification move together.
+The repo is public, so Actions minutes are unmetered and nothing argues for batching pushes. Every check a PR is judged on therefore runs in the local gate. `.github/workflows/release.yml` is deliberately not a leg: it runs on `main` after the merge, a ref no PR head shares, so a `Legs:` entry naming it would leave `ci-wait` waiting for a check that never arrives. When a `pull_request` workflow lands, re-run `/setup-skills` so the legs and any `defer-to-ci` verification move together.
 
 ## Reviewers
 
@@ -80,7 +80,7 @@ Reads: the squash subject
 In-PR requirement: None.
 Subject constraints: Conventional Commits, the type matching the issue's Kind dimension label (`fix`, `feat`, `docs`, `refactor`, `chore`).
 
-`.github/workflows/release.yml` runs semantic-release on a push to `main`. It writes the graded version into `plugin/.claude-plugin/plugin.json`, runs `claude plugin tag plugin --dry-run --force` as the agreement gate, commits the manifest and tags `ratelimit-otel--v<version>`. `claude plugin tag` refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR; this repo carries no `marketplace.json` yet, which the gate passes over.
+`.github/workflows/release.yml` runs semantic-release on a push to `main`, which grades the bump from the squash subject, writes the manifest version and tags `ratelimit-otel--v<version>`; `.releaserc.json` has the steps. A PR therefore carries no version edit. `claude plugin tag` runs in the release as the agreement gate: it refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR. This repo carries no `marketplace.json`, so the gate has nothing to compare and always passes; it is wired now so it already holds when that file lands.
 
 ## PR
 
@@ -90,7 +90,7 @@ Template: .github/pull_request_template.md
 
 - The emitted telemetry contract: instrumentation scope, metric names, type and unit, and label keys. A consumer outside this repo keeps only records matching these and drops the rest, so a rename breaks it silently.
 - `plugin/.claude-plugin/plugin.json`: name, version, and the `userConfig` schema a seat configures against.
-- `marketplace.json`: the entry the org console requires by name and pins by version.
+- `marketplace.json`, once distribution stops being manual (CONTEXT.md, **Where this is going**): the entry the org console requires by name and pins by version.
 - The set of environment variables the module reads, which `claude plugin validate` prints and the console's env block must supply.
 
 ## Triage
