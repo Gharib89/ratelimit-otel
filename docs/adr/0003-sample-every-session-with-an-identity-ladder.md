@@ -1,6 +1,6 @@
 # ADR-0003: Sample every session, including CI, and fall back for identity
 
-Status: accepted, 2026-09-21; scope amended 2026-09-21 (see Amendment)
+Status: accepted, 2026-09-21; amended 2026-09-21 and 2026-09-22 (see the Amendments)
 Resolves: CONTEXT.md open decision 3 (whether to sample on CI and cloud sessions)
 
 ## Context
@@ -62,3 +62,59 @@ curl above if that allowlist behaviour changes.
 
 A CI runner is untouched by this amendment: it was never measured unreachable, and
 the identity ladder above is what it exercises.
+
+## Amendment, 2026-09-22: a session ending is sampled, and is where the floor is waived
+
+The decision above stands and gains a third trigger. `$.clock.every` dies with the
+process and `turn.complete` does not fire on the way out, so the last state of a
+session was whatever the previous sample happened to catch.
+
+A gap is not a lost total: the metrics are gauges of a window's utilization, so
+the next sample reports the true current figure whatever happened in between. The
+loss is real in one case only, and then it is permanent: where the seat emits
+nothing more before the window resets, no sample ever observes that window's final
+state, and `end_pct` and `peak_pct` in cc-otel's `marts.fact_usage_window` stay
+understated for good. Measured on one seat's 5h series over 7 days, 235 intervals,
+a five-minute tail is worth about 4 points at p90 and about 65 at the maximum
+observed; the 7d window barely notices.
+
+`on("session.end", ...)` therefore takes a sample, reusing the same sampler, and it
+is **the one place the five-minute delivery floor is waived**. The floor bounds
+volume that multiplies by sessions times samples; a session end adds exactly one
+delivery per session, a term that does not compound, and holding it would skip
+precisely the tail shorter than five minutes that this amendment exists for. The
+middle option, waiving only where `percentUsed` moved since the last delivery, was
+rejected on the same arithmetic: a `claude -p` loop consumes window budget, so the
+figure moves on every invocation, and the only sessions it would quiet are those
+with no API response at all, which the non-empty `rateLimits` gate already drops.
+
+Which exits reach the hook was measured, not assumed, on Claude Code 2.1.278: a
+copy of the plugin under its own name logging `e.reason` through `--debug-file`,
+interactive paths driven through a pty.
+
+| Exit path | fires | `reason` |
+|---|---|---|
+| `claude -p` run done | yes | `other` |
+| ctrl-C twice at the prompt | yes | `prompt_input_exit` |
+| ctrl-D | yes | `prompt_input_exit` |
+| SIGINT to the process group | yes | `other` |
+| SIGHUP, the terminal closed outright | yes | `other` |
+| `/clear` | yes | `clear` |
+| SIGKILL | **no** | - |
+
+### Consequences
+
+`$.session.id()` still answers the ending session's id on every path above,
+including `/clear`, so the sample is attributed to the session it belongs to and
+nothing is threaded through from the event.
+
+A `/clear` or a resume is a session end, so a seat that clears often delivers on
+each clear. That is bounded by human speed and it is the same honest reading as
+any other: the cleared session's windows were real.
+
+Every session exit now carries one POST, bounded by the engine's 1.5 s
+`session.end` budget. Measured against the real collector the hook settled in
+335 ms, so the delivery completes rather than being cut off at exit.
+
+`kill -9` raises nothing and leaves the tail open. There is nothing in the plugin
+to change: the process is gone before any hook is bound.
