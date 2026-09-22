@@ -55,6 +55,7 @@ function world(
   on("ui.log", () => ({ value: undefined }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("turn.complete", (_$, e) => ({ text: e.answer }));
+  on("session.end", (_$, e) => ({ sessionId: e.sessionId }));
 
   return { clock, posts };
 }
@@ -66,6 +67,7 @@ const resourceKeys = (post: Post | undefined): string[] =>
   );
 
 const aTurn = { answer: "done", durationMs: 1, isAborted: false, turnId: "t1", reason: "answer" } as const;
+const anEnd = { reason: "other", sessionId: "sess-1", resume: { id: "sess-1" } } as const;
 
 test("says it loaded on the debug log when a session starts", async ($, on) => {
   const logged: { text: string; to: string }[] = [];
@@ -222,4 +224,38 @@ test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs",
     { key: "user.email", value: { stringValue: "env@example.com" } },
     { key: "session.id", value: { stringValue: "sess-1" } },
   ]);
+});
+
+test("a session ending takes a sample, so the window's last state is observed", async ($, on) => {
+  const { posts } = world(on);
+
+  await $.session.end(anEnd);
+
+  expect(posts.length).toBe(1);
+  expect(posts[0]?.url).toBe(`${ENDPOINT}/v1/metrics`);
+});
+
+test("a session ending waives the delivery floor, which is the tail it exists to catch", async ($, on) => {
+  const { clock, posts } = world(on);
+
+  await $.turn.complete(aTurn);
+  await clock.advance(3 * 60_000);
+  await $.session.end(anEnd);
+
+  expect(posts.length).toBe(2);
+  const metrics = JSON.parse(posts[1]?.init?.body ?? "{}").resourceMetrics[0].scopeMetrics[0].metrics;
+  expect(metrics[0].name).toBe("claude_code.usage.utilization");
+  expect(metrics[0].gauge.dataPoints[0].asDouble).toBe(23.5);
+});
+
+test("the delivery a session end makes still holds the floor for what follows it", async ($, on) => {
+  const { clock, posts } = world(on);
+
+  await $.session.end(anEnd);
+  expect(posts.length).toBe(1);
+
+  await clock.advance(60_000);
+  await $.turn.complete(aTurn);
+
+  expect(posts.length).toBe(1);
 });
