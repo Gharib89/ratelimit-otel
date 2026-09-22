@@ -18,6 +18,8 @@ export type Identity = {
   email?: string;
   accountId?: string;
   sessionId: string;
+  /** ADR-0001's account attributes, on the one sample of the session that carries them. */
+  account?: Attribute[];
 };
 
 /**
@@ -73,8 +75,50 @@ export function identityFrom(
   };
 }
 
-type AttributeValue = { stringValue: string };
-type Attribute = { key: string; value: AttributeValue };
+type AttributeValue = { stringValue: string } | { boolValue: boolean };
+export type Attribute = { key: string; value: AttributeValue };
+
+/**
+ * ADR-0001's account attributes, in its order, from `~/.claude.json`'s
+ * `oauthAccount`: the emitted key, the field it is read from, and how the value
+ * crosses. The fields ADR-0001 excludes (`displayName`, `fullName`,
+ * `accountCreatedAt`, `ccOnboardingFlags`, the trial pair) are absent from this
+ * table, which is the whole of what keeps them off the wire.
+ */
+const ACCOUNT_ATTRIBUTES: { key: string; field: string; as: "string" | "bool" | "epochMsAsIso" }[] = [
+  { key: "seat.tier", field: "seatTier", as: "string" },
+  { key: "user.rate_limit_tier", field: "userRateLimitTier", as: "string" },
+  { key: "organization.rate_limit_tier", field: "organizationRateLimitTier", as: "string" },
+  { key: "organization.role", field: "organizationRole", as: "string" },
+  { key: "organization.type", field: "organizationType", as: "string" },
+  { key: "billing.type", field: "billingType", as: "string" },
+  { key: "subscription.created_at", field: "subscriptionCreatedAt", as: "string" },
+  { key: "extra_usage.enabled", field: "hasExtraUsageEnabled", as: "bool" },
+  { key: "profile.fetched_at", field: "profileFetchedAt", as: "epochMsAsIso" },
+];
+
+/**
+ * Reads ADR-0001's account attributes off the parsed `~/.claude.json`, or
+ * `undefined` where it carries no `oauthAccount` (a `CLAUDE_CODE_OAUTH_TOKEN`
+ * session never writes one). A field the account does not carry is omitted.
+ */
+export function accountAttributesFrom(claudeJson: unknown): Attribute[] | undefined {
+  const account = (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
+  if (account === null || typeof account !== "object") return undefined;
+
+  const attributes: Attribute[] = [];
+  for (const { key, field, as } of ACCOUNT_ATTRIBUTES) {
+    const value = (account as Record<string, unknown>)[field];
+    if (as === "bool") {
+      if (typeof value === "boolean") attributes.push({ key, value: { boolValue: value } });
+    } else if (as === "epochMsAsIso") {
+      if (typeof value === "number") attributes.push(attribute(key, new Date(value).toISOString()));
+    } else if (typeof value === "string") {
+      attributes.push(attribute(key, value));
+    }
+  }
+  return attributes;
+}
 
 type DataPoint = {
   timeUnixNano: string;
@@ -138,6 +182,7 @@ export function buildPayload(
   if (identity.email !== undefined) resource.push(attribute("user.email", identity.email));
   if (identity.accountId !== undefined) resource.push(attribute("user.account_id", identity.accountId));
   resource.push(attribute("session.id", identity.sessionId));
+  if (identity.account !== undefined) resource.push(...identity.account);
 
   return {
     resourceMetrics: [

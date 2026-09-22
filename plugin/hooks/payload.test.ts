@@ -1,5 +1,5 @@
 import { expect, test } from "claude-code/testing";
-import { buildPayload, identityFrom } from "./payload";
+import { accountAttributesFrom, buildPayload, identityFrom } from "./payload";
 
 // 2025-09-21T19:20:00.000Z, with the window resetting 1800 seconds later.
 const NOW = 1_758_482_400_000;
@@ -185,4 +185,65 @@ test("rung 2 treats an empty user.email as no answer and falls through", () => {
     email: "flag@example.com",
     sessionId: "s",
   });
+});
+
+const OAUTH_ACCOUNT = {
+  emailAddress: "dev@example.com",
+  accountUuid: "uuid-1",
+  seatTier: "enterprise",
+  userRateLimitTier: "default_claude_max_5x",
+  organizationRateLimitTier: "default_claude_max_20x",
+  organizationRole: "admin",
+  organizationType: "enterprise",
+  billingType: "seat_based",
+  subscriptionCreatedAt: "2026-01-04T00:00:00.000Z",
+  hasExtraUsageEnabled: true,
+  profileFetchedAt: 1_758_400_000_000,
+  displayName: "Dev One",
+  fullName: "Dev One",
+  accountCreatedAt: "2025-01-01T00:00:00.000Z",
+  ccOnboardingFlags: ["a"],
+  claudeCodeTrialDurationDays: 30,
+  claudeCodeTrialEndsAt: "2026-02-01T00:00:00.000Z",
+};
+
+test("the account attributes are ADR-0001's nine, and only those nine", () => {
+  expect(accountAttributesFrom({ oauthAccount: OAUTH_ACCOUNT })).toEqual([
+    { key: "seat.tier", value: { stringValue: "enterprise" } },
+    { key: "user.rate_limit_tier", value: { stringValue: "default_claude_max_5x" } },
+    { key: "organization.rate_limit_tier", value: { stringValue: "default_claude_max_20x" } },
+    { key: "organization.role", value: { stringValue: "admin" } },
+    { key: "organization.type", value: { stringValue: "enterprise" } },
+    { key: "billing.type", value: { stringValue: "seat_based" } },
+    { key: "subscription.created_at", value: { stringValue: "2026-01-04T00:00:00.000Z" } },
+    { key: "extra_usage.enabled", value: { boolValue: true } },
+    { key: "profile.fetched_at", value: { stringValue: "2025-09-20T20:26:40.000Z" } },
+  ]);
+});
+
+test("a field the account does not carry is omitted rather than emitted empty", () => {
+  expect(accountAttributesFrom({ oauthAccount: { seatTier: "enterprise" } })).toEqual([
+    { key: "seat.tier", value: { stringValue: "enterprise" } },
+  ]);
+});
+
+test("no oauth account is no account attributes", () => {
+  expect(accountAttributesFrom(undefined)).toBe(undefined);
+  expect(accountAttributesFrom({})).toBe(undefined);
+});
+
+test("the account attributes ride the resource, beside the identity's own", () => {
+  const payload = buildPayload(
+    { rateLimits: [{ kind: "five_hour", percentUsed: 12, resetsAt: RESETS_AT }] },
+    { ...IDENTITY, account: [{ key: "seat.tier", value: { stringValue: "enterprise" } }] },
+    NOW,
+  );
+
+  expect(payload?.resourceMetrics[0].resource.attributes).toEqual([
+    { key: "service.name", value: { stringValue: "claude-code" } },
+    { key: "user.email", value: { stringValue: "dev@example.com" } },
+    { key: "user.account_id", value: { stringValue: "acct-1" } },
+    { key: "session.id", value: { stringValue: "sess-1" } },
+    { key: "seat.tier", value: { stringValue: "enterprise" } },
+  ]);
 });
