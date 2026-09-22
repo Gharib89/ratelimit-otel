@@ -57,13 +57,17 @@ url = next(l.split("=", 1)[1].strip() for l in
            open("/home/ribo/wip/projects/ratelimit-otel/.env") if l.startswith("DATABASE_URL="))
 with psycopg.connect(url, connect_timeout=25) as c, c.cursor() as cur:
     cur.execute("""
-      select metric_name, usage_window, count(*), max(ts)
+      select metric_name, usage_window, metric_type, value_kind, count(*), max(ts)
       from raw.metrics where scope_name = 'cc-otel.plugin'
-      group by 1, 2 order by 1, 2
+      group by 1, 2, 3, 4 order by 1, 2
     """)
     for r in cur.fetchall(): print(r)
 PY
 ```
+
+`metric_type` and `value_kind` are in the select because the ship profile's OTLP verification
+asserts them: ADR-0001 contracts both metrics as gauges, and a consumer downstream filters on
+`value_kind = 'gauge_last'`.
 
 `scope_name = 'cc-otel.plugin'` is what separates this plugin's rows from the retiring
 wrapper's ~35,000 rows under the same two metric names. Keep every query read-only:
