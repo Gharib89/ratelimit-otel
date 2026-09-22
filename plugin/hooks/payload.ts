@@ -23,20 +23,23 @@ export type Identity = {
 };
 
 /**
- * Reads `user.email` out of an `OTEL_RESOURCE_ATTRIBUTES` value: comma-separated
- * `key=value` pairs. The key is matched whole, so `other.user.email=` is not a
- * hit, and both halves are trimmed, because the variable is written by hand.
+ * Splits the `key=value` list both `OTEL_RESOURCE_ATTRIBUTES` and
+ * `OTEL_EXPORTER_OTLP_HEADERS` are written in: comma-separated pairs, split on
+ * the first `=` alone so a value's own `=` stays in it, both halves trimmed
+ * because the variables are written by hand, a pair with no `=` or no name
+ * dropped. A value containing a comma is not representable in this format and
+ * is the producer's to percent-encode.
  */
-function emailFromResourceAttributes(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
+function parseKeyValueList(value: string | undefined): [string, string][] {
+  const pairs: [string, string][] = [];
+  if (value === undefined) return pairs;
   for (const pair of value.split(",")) {
     const split = pair.indexOf("=");
     if (split < 0) continue;
-    if (pair.slice(0, split).trim() !== "user.email") continue;
-    const email = pair.slice(split + 1).trim();
-    if (email !== "") return email;
+    const name = pair.slice(0, split).trim();
+    if (name !== "") pairs.push([name, pair.slice(split + 1).trim()]);
   }
-  return undefined;
+  return pairs;
 }
 
 const stringField = (source: unknown, field: string): string | undefined => {
@@ -44,28 +47,34 @@ const stringField = (source: unknown, field: string): string | undefined => {
   return typeof value === "string" ? value : undefined;
 };
 
+/** What the ladder reads, named rather than positional: the three sources are otherwise transposable. */
+export type IdentitySources = {
+  /** The parsed `~/.claude.json`, or `undefined` when unreadable. */
+  claudeJson: unknown;
+  /** The `OTEL_RESOURCE_ATTRIBUTES` value. */
+  resourceAttributes: string | undefined;
+  /** The `CLAUDE_USER_EMAIL` value. */
+  claudeUserEmail: string | undefined;
+  /** The session's id, always emitted. */
+  sessionId: string;
+};
+
 /**
  * ADR-0003's identity ladder, first hit wins, over the three sources a hook
  * reads for it. The account uuid is carried whenever `~/.claude.json` has one,
  * independently of the ladder, since it is a resource attribute of its own
  * (ADR-0001) and the two later rungs cannot supply it.
- *
- * @param claudeJson the parsed `~/.claude.json`, or `undefined` when unreadable
- * @param resourceAttributes the `OTEL_RESOURCE_ATTRIBUTES` value
- * @param claudeUserEmail the `CLAUDE_USER_EMAIL` value
- * @param sessionId the session's id, always emitted
  */
-export function identityFrom(
-  claudeJson: unknown,
-  resourceAttributes: string | undefined,
-  claudeUserEmail: string | undefined,
-  sessionId: string,
-): Identity {
+export function identityFrom(sources: IdentitySources): Identity {
+  const { claudeJson, sessionId } = sources;
   const account = (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
+  const fromResourceAttributes = parseKeyValueList(sources.resourceAttributes).find(
+    ([name, value]) => name === "user.email" && value !== "",
+  )?.[1];
   const email =
     stringField(account, "emailAddress")?.toLowerCase() ??
-    emailFromResourceAttributes(resourceAttributes) ??
-    claudeUserEmail;
+    fromResourceAttributes ??
+    sources.claudeUserEmail;
   const accountId = stringField(account, "accountUuid");
 
   return {
@@ -167,12 +176,12 @@ export function buildPayload(
     if (limit.resetsAt !== undefined) attributes.push(attribute("resets_at", limit.resetsAt));
 
     utilization.push({ timeUnixNano, asDouble: limit.percentUsed, attributes });
-    if (limit.resetsAt !== undefined) {
-      resetInSeconds.push({
-        timeUnixNano,
-        asDouble: Math.floor((Date.parse(limit.resetsAt) - now) / 1000),
-        attributes,
-      });
+    // An unparseable `resetsAt` still carries verbatim as the attribute
+    // (ADR-0002), but has no countdown to derive: `NaN` would cross as
+    // `asDouble: null` and be a malformed datapoint delivered silently.
+    const resetsAt = limit.resetsAt === undefined ? NaN : Date.parse(limit.resetsAt);
+    if (!Number.isNaN(resetsAt)) {
+      resetInSeconds.push({ timeUnixNano, asDouble: Math.floor((resetsAt - now) / 1000), attributes });
     }
   }
 
@@ -203,19 +212,9 @@ export function buildPayload(
 }
 
 /**
- * Reads `OTEL_EXPORTER_OTLP_HEADERS` into request headers: the same
- * comma-separated `key=value` list, split on the first `=` alone so a bearer
- * token's own padding stays in the value. Values cross verbatim, undecoded,
- * which is the form ADR-0004 measured a delivery on.
+ * Reads `OTEL_EXPORTER_OTLP_HEADERS` into request headers. Values cross
+ * verbatim, undecoded, which is the form ADR-0004 measured a delivery on.
  */
 export function headersFrom(value: string | undefined): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (value === undefined) return headers;
-  for (const pair of value.split(",")) {
-    const split = pair.indexOf("=");
-    if (split < 0) continue;
-    const name = pair.slice(0, split).trim();
-    if (name !== "") headers[name] = pair.slice(split + 1).trim();
-  }
-  return headers;
+  return Object.fromEntries(parseKeyValueList(value));
 }

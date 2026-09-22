@@ -10,14 +10,21 @@ const DELIVERY_FLOOR_MS = 5 * 60_000;
  * reloads. Two concurrent sessions can lose an update to each other; the worst
  * case is one extra delivery, so there is no lock and no temp-and-rename here.
  *
- * The store's file name carries the install identity, so the floor resets once
- * if the install method changes (a `--plugin-dir` load and a marketplace install
- * do not share it).
+ * Measured on this machine: the file is `~/.claude/plugins/store/<name>_inline-
+ * <hash>.json`, and two `--plugin-dir` loads of this plugin from different paths
+ * share it. The `inline` in that name is the install method, so a floor carried
+ * across a change of install method is not something to rely on; that case is
+ * unmeasured.
  */
 const LAST_DELIVERY_KEY = "last_delivery_at";
 
-/** ADR-0001: the account attributes go out once per session, on the first delivery that lands. */
-let accountAttributesSent = false;
+/**
+ * ADR-0001: the account attributes go out once per session, on the first
+ * delivery that lands. Keyed by the session rather than a boolean, because
+ * nothing here settles whether one module instance backs one session or
+ * outlives it, and a boolean is wrong under the second.
+ */
+let accountAttributesSentFor: string | undefined;
 
 /**
  * One sample: read the windows, deliver them, and hold the floor. Every failure
@@ -47,17 +54,18 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
   if (home !== undefined) {
     claudeJson = await $.fs
       .read(`${home}/.claude.json`)
-      .then((text) => JSON.parse(typeof text === "string" ? text : "{}") as unknown)
+      .then((text) => JSON.parse(text) as unknown)
       .catch(() => undefined);
   }
 
-  const identity = identityFrom(
+  const sessionId = await $.session.id();
+  const identity = identityFrom({
     claudeJson,
-    await $.env.get("OTEL_RESOURCE_ATTRIBUTES"),
-    await $.env.get("CLAUDE_USER_EMAIL"),
-    await $.session.id(),
-  );
-  const account = accountAttributesSent ? undefined : accountAttributesFrom(claudeJson);
+    resourceAttributes: await $.env.get("OTEL_RESOURCE_ATTRIBUTES"),
+    claudeUserEmail: await $.env.get("CLAUDE_USER_EMAIL"),
+    sessionId,
+  });
+  const account = accountAttributesSentFor === sessionId ? undefined : accountAttributesFrom(claudeJson);
   const payload = buildPayload(usage, { ...identity, ...(account === undefined ? {} : { account }) }, now);
   if (payload === undefined) return;
 
@@ -78,7 +86,7 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
     .catch(() => undefined);
   if (response?.ok !== true) return;
 
-  accountAttributesSent = true;
+  accountAttributesSentFor = sessionId;
   await $.store.set(LAST_DELIVERY_KEY, now);
 }
 

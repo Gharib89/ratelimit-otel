@@ -135,56 +135,95 @@ test("an identity with no email still emits, carrying the session alone", () => 
 
 test("rung 1 wins: the oauth account's email is lowercased and its uuid carried", () => {
   expect(
-    identityFrom(
-      { oauthAccount: { emailAddress: "Dev.One@Example.COM", accountUuid: "uuid-1" } },
-      "user.email=env@example.com",
-      "flag@example.com",
-      "sess-1",
-    ),
+    identityFrom({
+      claudeJson: { oauthAccount: { emailAddress: "Dev.One@Example.COM", accountUuid: "uuid-1" } },
+      resourceAttributes: "user.email=env@example.com",
+      claudeUserEmail: "flag@example.com",
+      sessionId: "sess-1",
+    }),
   ).toEqual({ email: "dev.one@example.com", accountId: "uuid-1", sessionId: "sess-1" });
 });
 
 test("rung 2: OTEL_RESOURCE_ATTRIBUTES answers when there is no oauth account", () => {
   expect(
-    identityFrom(undefined, "service.name=claude-code,user.email=env@example.com", "flag@example.com", "sess-2"),
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: "service.name=claude-code,user.email=env@example.com",
+      claudeUserEmail: "flag@example.com",
+      sessionId: "sess-2",
+    }),
   ).toEqual({ email: "env@example.com", sessionId: "sess-2" });
 });
 
 test("rung 2 reads user.email as a whole key, not as a suffix of another one", () => {
   expect(
-    identityFrom(undefined, "other.user.email=wrong@example.com,user.email=right@example.com", undefined, "s"),
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: "other.user.email=wrong@example.com,user.email=right@example.com",
+      claudeUserEmail: undefined,
+      sessionId: "s",
+    }),
   ).toEqual({ email: "right@example.com", sessionId: "s" });
-  expect(identityFrom(undefined, "other.user.email=wrong@example.com", undefined, "s")).toEqual({
-    sessionId: "s",
-  });
-  expect(identityFrom(undefined, " user.email = spaced@example.com ", undefined, "s")).toEqual({
-    email: "spaced@example.com",
-    sessionId: "s",
-  });
+  expect(
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: "other.user.email=wrong@example.com",
+      claudeUserEmail: undefined,
+      sessionId: "s",
+    }),
+  ).toEqual({ sessionId: "s" });
+  expect(
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: " user.email = spaced@example.com ",
+      claudeUserEmail: undefined,
+      sessionId: "s",
+    }),
+  ).toEqual({ email: "spaced@example.com", sessionId: "s" });
 });
 
 test("rung 3: CLAUDE_USER_EMAIL answers when the resource attributes carry no email", () => {
-  expect(identityFrom(undefined, "service.name=claude-code", "flag@example.com", "sess-3")).toEqual({
-    email: "flag@example.com",
-    sessionId: "sess-3",
-  });
+  expect(
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: "service.name=claude-code",
+      claudeUserEmail: "flag@example.com",
+      sessionId: "sess-3",
+    }),
+  ).toEqual({ email: "flag@example.com", sessionId: "sess-3" });
 });
 
 test("no rung answers: the sample still has an identity, with no email (ADR-0003)", () => {
-  expect(identityFrom(undefined, undefined, undefined, "sess-4")).toEqual({ sessionId: "sess-4" });
+  expect(
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: undefined,
+      claudeUserEmail: undefined,
+      sessionId: "sess-4",
+    }),
+  ).toEqual({ sessionId: "sess-4" });
 });
 
 test("an oauth account with no email falls through for the email and keeps the uuid", () => {
   expect(
-    identityFrom({ oauthAccount: { accountUuid: "uuid-2" } }, undefined, "flag@example.com", "s"),
+    identityFrom({
+      claudeJson: { oauthAccount: { accountUuid: "uuid-2" } },
+      resourceAttributes: undefined,
+      claudeUserEmail: "flag@example.com",
+      sessionId: "s",
+    }),
   ).toEqual({ email: "flag@example.com", accountId: "uuid-2", sessionId: "s" });
 });
 
 test("rung 2 treats an empty user.email as no answer and falls through", () => {
-  expect(identityFrom(undefined, "user.email=,service.name=claude-code", "flag@example.com", "s")).toEqual({
-    email: "flag@example.com",
-    sessionId: "s",
-  });
+  expect(
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: "user.email=,service.name=claude-code",
+      claudeUserEmail: "flag@example.com",
+      sessionId: "s",
+    }),
+  ).toEqual({ email: "flag@example.com", sessionId: "s" });
 });
 
 const OAUTH_ACCOUNT = {
@@ -261,4 +300,25 @@ test("a header pair with no = or no name is dropped, and no headers is an empty 
   expect(headersFrom("=lonely")).toEqual({});
   expect(headersFrom(undefined)).toEqual({});
   expect(headersFrom("")).toEqual({});
+});
+
+test("an unparseable resetsAt keeps the attribute and emits no countdown", () => {
+  const payload = buildPayload(
+    { rateLimits: [{ kind: "five_hour", percentUsed: 31, resetsAt: "whenever" }] },
+    IDENTITY,
+    NOW,
+  );
+
+  const metrics = payload?.resourceMetrics[0].scopeMetrics[0].metrics;
+  expect(metrics?.[0]?.gauge.dataPoints).toEqual([
+    {
+      timeUnixNano: "1758482400000000000",
+      asDouble: 31,
+      attributes: [
+        { key: "window", value: { stringValue: "5h" } },
+        { key: "resets_at", value: { stringValue: "whenever" } },
+      ],
+    },
+  ]);
+  expect(metrics?.[1]?.gauge.dataPoints).toEqual([]);
 });

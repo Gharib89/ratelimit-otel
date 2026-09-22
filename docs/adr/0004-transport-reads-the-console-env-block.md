@@ -54,8 +54,9 @@ is absent**.
   on the same `/v1/metrics` path, so the plugin stays dependency-free with no
   protobuf encoder to carry.
 - **No endpoint means no send.** Where the console policy does not reach a scope,
-  `$.env.get` returns nothing and the sample is skipped, not queued and not
-  retried. This does not narrow
+  `$.env.get` returns nothing, and where it reaches one without the endpoint set it
+  returns an empty string; both are no endpoint, and the sample is skipped, not
+  queued and not retried. This does not narrow
   [ADR-0003](0003-sample-every-session-with-an-identity-ladder.md): every session
   still samples, and what a missing endpoint removes is the delivery, not the
   sample or the session it came from.
