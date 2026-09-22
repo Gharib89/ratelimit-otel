@@ -32,10 +32,15 @@ let accountAttributesSentFor: string | undefined;
  * session on every seat, so a logged error would repeat on every seat the
  * console policy does not reach.
  */
-async function sampleAndDeliver($: EngineInterface): Promise<void> {
+async function sampleAndDeliver(
+  $: EngineInterface,
+  options: { waiveFloor?: boolean } = {},
+): Promise<void> {
   const now = await $.clock.now();
-  const lastDeliveryAt = await $.store.get(LAST_DELIVERY_KEY);
-  if (typeof lastDeliveryAt === "number" && now - lastDeliveryAt < DELIVERY_FLOOR_MS) return;
+  if (options.waiveFloor !== true) {
+    const lastDeliveryAt = await $.store.get(LAST_DELIVERY_KEY);
+    if (typeof lastDeliveryAt === "number" && now - lastDeliveryAt < DELIVERY_FLOOR_MS) return;
+  }
 
   // ADR-0004: where the console policy does not reach this scope there is no
   // endpoint, and the sample is skipped rather than queued or retried.
@@ -116,7 +121,25 @@ const sampleOnTurn: Hook<"turn.complete"> = async ($, e, next) => {
   return next(e);
 };
 
+/**
+ * The last sample of the session: `$.clock.every` dies with the process, so
+ * without this the window's final state is whatever the previous sample caught,
+ * and where the seat then goes quiet until the window resets, no sample ever
+ * observes that state.
+ *
+ * The floor is waived here, which is the one place it is. ADR-0003 put it there
+ * to bound volume that multiplies by sessions x samples; this adds exactly one
+ * delivery per session, a term that does not compound, and holding it would skip
+ * precisely the short tail this hook exists for. The cost is that every session
+ * exit now carries one POST, bounded by the engine's 1.5 s `session.end` budget.
+ */
+const sampleOnSessionEnd: Hook<"session.end"> = async ($, e, next) => {
+  await sampleAndDeliver($, { waiveFloor: true });
+  return next(e);
+};
+
 export const register: Register = (on) => {
   on("session.start", startSession);
   on("turn.complete", sampleOnTurn);
+  on("session.end", sampleOnSessionEnd);
 };
