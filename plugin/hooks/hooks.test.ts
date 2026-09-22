@@ -21,6 +21,10 @@ function world(
     rateLimits?: SessionRateLimit[];
     claudeJson?: unknown;
     respond?: () => { status: number; ok: boolean; headers: Record<string, string>; text: string };
+    /** Read on every sample, so a test can move to a second session mid-run. */
+    sessionId?: () => string;
+    /** Answers `$.fs.read`; throwing it is how an unreadable `~/.claude.json` is expressed. */
+    readClaudeJson?: () => string;
   } = {},
 ) {
   const clock = mock.clock(on, { now: NOW });
@@ -44,14 +48,22 @@ function world(
   on("session.usage", () => ({
     value: { context: { window: 200_000 }, rateLimits: options.rateLimits ?? [FIVE_HOUR] },
   }));
-  on("session.id", () => ({ value: "sess-1" }));
-  on("fs.read", () => ({ value: JSON.stringify(options.claudeJson ?? {}) }));
+  on("session.id", () => ({ value: options.sessionId?.() ?? "sess-1" }));
+  on("fs.read", () => ({
+    value: options.readClaudeJson?.() ?? JSON.stringify(options.claudeJson ?? {}),
+  }));
   on("ui.log", () => ({ value: undefined }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("turn.complete", (_$, e) => ({ text: e.answer }));
 
   return { clock, posts };
 }
+
+/** The resource attribute keys one post carried. */
+const resourceKeys = (post: Post | undefined): string[] =>
+  JSON.parse(post?.init?.body ?? "{}").resourceMetrics[0].resource.attributes.map(
+    (a: { key: string }) => a.key,
+  );
 
 const aTurn = { answer: "done", durationMs: 1, isAborted: false, turnId: "t1", reason: "answer" } as const;
 
@@ -155,12 +167,8 @@ test("the account attributes go out on the first delivery and not on the next", 
   await clock.advance(5 * 60_000);
   await $.turn.complete(aTurn);
 
-  const keys = (post: Post | undefined) =>
-    JSON.parse(post?.init?.body ?? "{}").resourceMetrics[0].resource.attributes.map(
-      (a: { key: string }) => a.key,
-    );
-  expect(keys(posts[0])).toEqual(["service.name", "user.email", "session.id", "seat.tier"]);
-  expect(keys(posts[1])).toEqual(["service.name", "user.email", "session.id"]);
+  expect(resourceKeys(posts[0])).toEqual(["service.name", "user.email", "session.id", "seat.tier"]);
+  expect(resourceKeys(posts[1])).toEqual(["service.name", "user.email", "session.id"]);
 });
 
 test("a refused delivery consumes neither the floor nor the account attributes", async ($, on) => {
@@ -179,55 +187,32 @@ test("a refused delivery consumes neither the floor nor the account attributes",
 
 
 test("the account attributes go out again in the next session", async ($, on) => {
-  const posts: Post[] = [];
-  const clock = mock.clock(on, { now: NOW });
-  mock.store(on);
-  mock.env(on, { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT });
   let sessionId = "sess-1";
-  on("http.fetch", (_$, e) => {
-    posts.push({ url: e.url, init: e.init });
-    return { value: { status: 200, ok: true, headers: {}, text: '{"partialSuccess":{}}' } };
+  const { clock, posts } = world(on, {
+    env: { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT },
+    claudeJson: { oauthAccount: { emailAddress: "dev@example.com", seatTier: "enterprise" } },
+    sessionId: () => sessionId,
   });
-  on("session.usage", () => ({ value: { context: { window: 200_000 }, rateLimits: [FIVE_HOUR] } }));
-  on("session.id", () => ({ value: sessionId }));
-  on("fs.read", () => ({
-    value: JSON.stringify({ oauthAccount: { emailAddress: "dev@example.com", seatTier: "enterprise" } }),
-  }));
-  on("ui.log", () => ({ value: undefined }));
-  on("turn.complete", (_$, e) => ({ text: e.answer }));
 
   await $.turn.complete(aTurn);
   await clock.advance(5 * 60_000);
   sessionId = "sess-2";
   await $.turn.complete(aTurn);
 
-  const keys = (post: Post | undefined) =>
-    JSON.parse(post?.init?.body ?? "{}").resourceMetrics[0].resource.attributes.map(
-      (a: { key: string }) => a.key,
-    );
-  expect(keys(posts[0])).toContain("seat.tier");
-  expect(keys(posts[1])).toContain("seat.tier");
+  expect(resourceKeys(posts[0])).toContain("seat.tier");
+  expect(resourceKeys(posts[1])).toContain("seat.tier");
 });
 
 test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs", async ($, on) => {
-  const posts: Post[] = [];
-  mock.clock(on, { now: NOW });
-  mock.store(on);
-  mock.env(on, {
-    OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT,
-    OTEL_RESOURCE_ATTRIBUTES: "user.email=env@example.com",
+  const { posts } = world(on, {
+    env: {
+      OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT,
+      OTEL_RESOURCE_ATTRIBUTES: "user.email=env@example.com",
+    },
+    readClaudeJson: () => {
+      throw new Error("ENOENT");
+    },
   });
-  on("http.fetch", (_$, e) => {
-    posts.push({ url: e.url, init: e.init });
-    return { value: { status: 200, ok: true, headers: {}, text: "{}" } };
-  });
-  on("session.usage", () => ({ value: { context: { window: 200_000 }, rateLimits: [FIVE_HOUR] } }));
-  on("session.id", () => ({ value: "sess-1" }));
-  on("fs.read", () => {
-    throw new Error("ENOENT");
-  });
-  on("ui.log", () => ({ value: undefined }));
-  on("turn.complete", (_$, e) => ({ text: e.answer }));
 
   await $.turn.complete(aTurn);
 

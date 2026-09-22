@@ -246,6 +246,18 @@ const OAUTH_ACCOUNT = {
   claudeCodeTrialEndsAt: "2026-02-01T00:00:00.000Z",
 };
 
+test("a key repeated in either list takes its last value", () => {
+  expect(
+    identityFrom({
+      claudeJson: undefined,
+      resourceAttributes: "user.email=first@example.com,user.email=last@example.com",
+      claudeUserEmail: undefined,
+      sessionId: "s",
+    }),
+  ).toEqual({ email: "last@example.com", sessionId: "s" });
+  expect(headersFrom("Authorization=first,Authorization=last")).toEqual({ Authorization: "last" });
+});
+
 test("the account attributes are ADR-0001's nine, and only those nine", () => {
   expect(accountAttributesFrom({ oauthAccount: OAUTH_ACCOUNT })).toEqual([
     { key: "seat.tier", value: { stringValue: "enterprise" } },
@@ -274,8 +286,9 @@ test("no oauth account is no account attributes", () => {
 test("the account attributes ride the resource, beside the identity's own", () => {
   const payload = buildPayload(
     { rateLimits: [{ kind: "five_hour", percentUsed: 12, resetsAt: RESETS_AT }] },
-    { ...IDENTITY, account: [{ key: "seat.tier", value: { stringValue: "enterprise" } }] },
+    IDENTITY,
     NOW,
+    [{ key: "seat.tier", value: { stringValue: "enterprise" } }],
   );
 
   expect(payload?.resourceMetrics[0].resource.attributes).toEqual([

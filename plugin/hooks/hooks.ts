@@ -66,7 +66,7 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
     sessionId,
   });
   const account = accountAttributesSentFor === sessionId ? undefined : accountAttributesFrom(claudeJson);
-  const payload = buildPayload(usage, { ...identity, ...(account === undefined ? {} : { account }) }, now);
+  const payload = buildPayload(usage, identity, now, account);
   if (payload === undefined) return;
 
   // A refused connection is measured, not hypothetical: a cloud sandbox's egress

@@ -18,8 +18,6 @@ export type Identity = {
   email?: string;
   accountId?: string;
   sessionId: string;
-  /** ADR-0001's account attributes, on the one sample of the session that carries them. */
-  account?: Attribute[];
 };
 
 /**
@@ -27,20 +25,25 @@ export type Identity = {
  * `OTEL_EXPORTER_OTLP_HEADERS` are written in: comma-separated pairs, split on
  * the first `=` alone so a value's own `=` stays in it, both halves trimmed
  * because the variables are written by hand, a pair with no `=` or no name
- * dropped. A value containing a comma is not representable in this format and
- * is the producer's to percent-encode.
+ * dropped, and a key repeated in the list takes its last value. A value
+ * containing a comma is not representable in this format and is the producer's
+ * to percent-encode.
  */
-function parseKeyValueList(value: string | undefined): [string, string][] {
-  const pairs: [string, string][] = [];
+function parseKeyValueList(value: string | undefined): Record<string, string> {
+  const pairs: Record<string, string> = {};
   if (value === undefined) return pairs;
   for (const pair of value.split(",")) {
     const split = pair.indexOf("=");
     if (split < 0) continue;
     const name = pair.slice(0, split).trim();
-    if (name !== "") pairs.push([name, pair.slice(split + 1).trim()]);
+    if (name !== "") pairs[name] = pair.slice(split + 1).trim();
   }
   return pairs;
 }
+
+/** `~/.claude.json`'s `oauthAccount`, the object rung 1 and the account attributes both read. */
+const oauthAccountOf = (claudeJson: unknown): unknown =>
+  (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
 
 const stringField = (source: unknown, field: string): string | undefined => {
   const value = (source as Record<string, unknown> | undefined)?.[field];
@@ -66,21 +69,18 @@ export type IdentitySources = {
  * (ADR-0001) and the two later rungs cannot supply it.
  */
 export function identityFrom(sources: IdentitySources): Identity {
-  const { claudeJson, sessionId } = sources;
-  const account = (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
-  const fromResourceAttributes = parseKeyValueList(sources.resourceAttributes).find(
-    ([name, value]) => name === "user.email" && value !== "",
-  )?.[1];
+  const account = oauthAccountOf(sources.claudeJson);
+  const fromResourceAttributes = parseKeyValueList(sources.resourceAttributes)["user.email"];
   const email =
     stringField(account, "emailAddress")?.toLowerCase() ??
-    fromResourceAttributes ??
+    (fromResourceAttributes === "" ? undefined : fromResourceAttributes) ??
     sources.claudeUserEmail;
   const accountId = stringField(account, "accountUuid");
 
   return {
     ...(email === undefined ? {} : { email }),
     ...(accountId === undefined ? {} : { accountId }),
-    sessionId,
+    sessionId: sources.sessionId,
   };
 }
 
@@ -112,7 +112,7 @@ const ACCOUNT_ATTRIBUTES: { key: string; field: string; as: "string" | "bool" | 
  * session never writes one). A field the account does not carry is omitted.
  */
 export function accountAttributesFrom(claudeJson: unknown): Attribute[] | undefined {
-  const account = (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
+  const account = oauthAccountOf(claudeJson);
   if (account === null || typeof account !== "object") return undefined;
 
   const attributes: Attribute[] = [];
@@ -149,8 +149,9 @@ export type OtlpPayload = {
 const attribute = (key: string, value: string): Attribute => ({ key, value: { stringValue: value } });
 
 /**
- * Assembles one sample's OTLP JSON from the windows, the identity and the
- * instant, all three passed in so a test drives them.
+ * Assembles one sample's OTLP JSON from the windows, the identity, the instant
+ * and, on the one sample of the session that carries them, ADR-0001's account
+ * attributes: all passed in so a test drives them.
  *
  * `undefined` when no window survived the mapping, which is the caller's whole
  * send gate: `rateLimits` is empty before the first API response, and a gateway
@@ -160,6 +161,7 @@ export function buildPayload(
   usage: { rateLimits: SessionRateLimit[] },
   identity: Identity,
   now: number,
+  accountAttributes?: Attribute[],
 ): OtlpPayload | undefined {
   // Nanoseconds by string concatenation, not `now * 1e6`: the product is past
   // Number.MAX_SAFE_INTEGER and OTLP/JSON carries an int64 as a string anyway.
@@ -191,7 +193,7 @@ export function buildPayload(
   if (identity.email !== undefined) resource.push(attribute("user.email", identity.email));
   if (identity.accountId !== undefined) resource.push(attribute("user.account_id", identity.accountId));
   resource.push(attribute("session.id", identity.sessionId));
-  if (identity.account !== undefined) resource.push(...identity.account);
+  if (accountAttributes !== undefined) resource.push(...accountAttributes);
 
   return {
     resourceMetrics: [
@@ -216,5 +218,5 @@ export function buildPayload(
  * verbatim, undecoded, which is the form ADR-0004 measured a delivery on.
  */
 export function headersFrom(value: string | undefined): Record<string, string> {
-  return Object.fromEntries(parseKeyValueList(value));
+  return parseKeyValueList(value);
 }
