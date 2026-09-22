@@ -335,3 +335,20 @@ test("an unparseable resetsAt keeps the attribute and emits no countdown", () =>
   ]);
   expect(metrics?.[1]?.gauge.dataPoints).toEqual([]);
 });
+
+test("the countdown never lands below the reset instant, so the reconstruction bins to its own window", () => {
+  // ADR-0002's amendment: the consumer reconstructs the window's end as
+  // `ts + reset_in_seconds` binned to five minutes, so a countdown short by the
+  // sub-second part bins a whole bucket early. These are its measured numbers.
+  const boundary = "2026-09-22T10:20:00.000Z";
+  const now = Date.parse(boundary) - 16_418_150; // 16418.15 s before the reset
+  const payload = buildPayload(
+    { rateLimits: [{ kind: "five_hour", percentUsed: 44, resetsAt: boundary }] },
+    IDENTITY,
+    now,
+  );
+
+  const countdown = payload?.resourceMetrics[0].scopeMetrics[0].metrics[1]?.gauge.dataPoints[0];
+  expect(countdown?.asDouble).toBe(16_419);
+  expect(now + (countdown?.asDouble ?? 0) * 1000).toBeGreaterThanOrEqual(Date.parse(boundary));
+});
