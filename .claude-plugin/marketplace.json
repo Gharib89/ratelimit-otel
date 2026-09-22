@@ -1,0 +1,5 @@
+{
+  "name": "ratelimit-otel",
+  "owner": { "name": "Ahmed Gharib" },
+  "plugins": [{ "name": "ratelimit-otel", "source": "./plugin" }]
+}

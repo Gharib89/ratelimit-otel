@@ -32,6 +32,8 @@ The emit contract is settled. Read these before changing anything that leaves th
 
 ## Where this is going
 
-Build for **one seat**: a version installable with `--plugin-dir` and correct on one machine. The cc-otel database tickets are held until real rows land in `raw.metrics`, and the schema is decided from those rows rather than ahead of them.
+Build for **one seat**: a version installed from this repo's own marketplace and correct on one machine. The cc-otel database tickets are held until real rows land in `raw.metrics`, and the schema is decided from those rows rather than ahead of them.
 
-Distribution is manual until the org console carries `enabledPlugins` and `extraKnownMarketplaces`; the policy env block already carries `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`. No marketplace work is needed yet.
+Distribution runs through the repo's own marketplace. `.claude-plugin/marketplace.json` at the root names the plugin at `./plugin`, so `claude plugin marketplace add <this repo>` followed by `claude plugin install ratelimit-otel@ratelimit-otel` puts it on a seat at user scope, where it survives a restart; `--plugin-dir` stays the way to run an unmerged branch. The entry carries no `version`: `plugin.json` wins at install time, so a version there is a second copy to keep in step, and `claude plugin tag` refuses the release the moment the two drift.
+
+What is left is the org console, and it is the operator's to write, not this repo's: an `extraKnownMarketplaces` entry naming this repo and an `enabledPlugins` entry pinned by the entry's `ref` or `sha`. The policy env block already carries `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`. One seat runs the installed plugin alone first; the fleet follows after a quiet period.
