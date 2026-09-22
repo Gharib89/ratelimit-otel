@@ -252,6 +252,8 @@ test("the delivery a session end makes still holds the floor for what follows it
   const { clock, posts } = world(on);
 
   await $.session.end(anEnd);
+  expect(posts.length).toBe(1);
+
   await clock.advance(60_000);
   await $.turn.complete(aTurn);
 
