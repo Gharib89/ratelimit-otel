@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Dev tooling only. The plugin itself needs no Node: a hooks module reaches everything through `$`. TypeScript is here to typecheck it.",
   "devDependencies": {
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
+    "semantic-release": "^25.0.9",
     "typescript": "^5.9.0"
   }
 }

@@ -26,10 +26,10 @@ Tripwires: None.
 ## CI
 
 Legs: None.
-No-checks legal: yes; this repo has no `pull_request` workflow at all, so no PR will ever report a check. With `Legs: None.` that is the pair dropping `ci-wait`'s no-checks grace to zero.
+No-checks legal: yes; `.github/workflows/release.yml` is the repo's only workflow and it triggers on `push` to `main` alone, so no PR will ever report a check. With `Legs: None.` that is the pair dropping `ci-wait`'s no-checks grace to zero.
 Push policy: Default.
 
-The repo is public, so Actions minutes are unmetered and nothing argues for batching pushes. Every check therefore runs in the local gate. When a PR workflow lands, re-run `/setup-skills` so the legs and any `defer-to-ci` verification move together.
+The repo is public, so Actions minutes are unmetered and nothing argues for batching pushes. Every check a PR is judged on therefore runs in the local gate. The release workflow is deliberately not a leg: it runs after the merge, on a ref no PR has, so a `Legs:` entry naming it would leave `ci-wait` waiting for a check that never arrives. When a `pull_request` workflow lands, re-run `/setup-skills` so the legs and any `defer-to-ci` verification move together.
 
 ## Reviewers
 
@@ -80,7 +80,7 @@ Reads: the squash subject
 In-PR requirement: None.
 Subject constraints: Conventional Commits, the type matching the issue's Kind dimension label (`fix`, `feat`, `docs`, `refactor`, `chore`).
 
-The release job bumps `plugin/.claude-plugin/plugin.json` and `marketplace.json` and tags. `claude plugin tag` refuses when those two disagree, so they move together in the release commit and never in a PR. That workflow does not exist yet.
+`.github/workflows/release.yml` runs semantic-release on a push to `main`. It writes the graded version into `plugin/.claude-plugin/plugin.json`, runs `claude plugin tag plugin --dry-run --force` as the agreement gate, commits the manifest and tags `ratelimit-otel--v<version>`. `claude plugin tag` refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR; this repo carries no `marketplace.json` yet, which the gate passes over.
 
 ## PR
 

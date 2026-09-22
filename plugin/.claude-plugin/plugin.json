@@ -2,5 +2,7 @@
   "name": "ratelimit-otel",
   "version": "0.1.0",
   "description": "Exports Claude Code rate-limit window utilization as OTLP.",
-  "author": { "name": "Ahmed Gharib" }
+  "author": {
+    "name": "Ahmed Gharib"
+  }
 }
