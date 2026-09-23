@@ -2,6 +2,7 @@
 
 Status: accepted, 2026-09-21; amended 2026-09-21 and 2026-09-22 (see the Amendments)
 Resolves: CONTEXT.md open decision 3 (whether to sample on CI and cloud sessions)
+Superseded in part: its sampling triggers and delivery floor, and the 2026-09-22 amendment's floor waiver, by [ADR-0005](0005-deliver-on-movement.md). Sampling every session and the identity ladder stand.
 
 ## Context
 
