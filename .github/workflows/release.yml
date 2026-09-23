@@ -1,5 +1,6 @@
 # Releases the plugin: grades the bump from the squash subject's Conventional
-# type, writes it into the plugin manifest, commits that to `main` and tags.
+# type, writes it into the plugin manifest, commits that to `main` and tags,
+# then publishes the release archive (ADR-0006) on a GitHub Release for the tag.
 #
 # `push` to `main` only. A `pull_request` trigger here would make the manifest
 # version something a PR carries, which the ship profile's `In-PR requirement:`
@@ -22,7 +23,7 @@ jobs:
     name: release
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push the release commit and the tag
+      contents: write # push the release commit and the tag, create the GitHub Release
     steps:
       - uses: actions/checkout@v7
         with:
