@@ -7,12 +7,21 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node scripts/set-manifest-version.mjs ${nextRelease.version} && claude plugin tag plugin --dry-run --force"
+        "generateNotesCmd": "scripts/release-archive.sh build dist ${nextRelease.version}",
+        "prepareCmd": "node scripts/set-manifest-version.mjs ${nextRelease.version} && claude plugin tag plugin --dry-run --force && unzip -p dist/ratelimit-otel-${nextRelease.version}.zip .claude-plugin/plugin.json | cmp - plugin/.claude-plugin/plugin.json"
       }
     ],
     [
       "@semantic-release/git",
       { "assets": ["plugin/.claude-plugin/plugin.json"] }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": ["dist/ratelimit-otel-*.zip", "dist/ratelimit-otel-*.zip.sha256"],
+        "successCommentCondition": false,
+        "failCommentCondition": false
+      }
     ]
   ]
 }

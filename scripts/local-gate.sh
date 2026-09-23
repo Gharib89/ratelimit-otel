@@ -58,6 +58,45 @@ manifest_writer_writes() {
   return $rc
 }
 
+# The `archive` gate's body. The release archive is built only inside a release,
+# so this builds it from the checkout and requires the layout check to pass, then
+# hands the check five archives it must refuse, one per refusal: the manifest
+# below the root, no hooks/hooks.json, a test file included, a file name whose
+# version disagrees with the manifest's, and a name outside the asset pattern.
+archiver="scripts/release-archive.sh"
+release_archive_checks() {
+  local root=$PWD d rc zip=ratelimit-otel-$probe_version.zip v case
+  d=$(mktemp -d) || return 1
+  (
+    "$root/$archiver" build "$d/out" >/dev/null || exit 1
+    "$root/$archiver" build "$d/versioned" "$probe_version" >/dev/null || exit 1
+    [ "$(unzip -p "$d/versioned/$zip" .claude-plugin/plugin.json | jq -r .version)" = "$probe_version" ] || exit 1
+    ( cd "$d/versioned" && sha256sum --quiet -c "$zip.sha256" ) || exit 1
+    # Each bad tree is zipped under the real asset name for the checkout's
+    # version, so the name check passes and only the case's own check can refuse.
+    v=$(jq -r .version "$root/$manifest") || exit 1
+    # nested: hooks/ at the root, the manifest one level down.
+    mkdir -p "$d/nested/plugin" && cp -r "$root/plugin/hooks" "$d/nested/" \
+      && cp -r "$root/plugin/.claude-plugin" "$d/nested/plugin/" \
+      && rm -f "$d"/nested/hooks/*.test.ts "$d"/nested/hooks/*.test.tsx || exit 1
+    # nohooks: the manifest and an empty hooks/, no hooks/hooks.json.
+    mkdir -p "$d/nohooks/hooks" && cp -r "$root/plugin/.claude-plugin" "$d/nohooks/" || exit 1
+    # tests: the whole plugin, test files included.
+    cp -r "$root/plugin" "$d/tests" || exit 1
+    for case in nested nohooks tests; do
+      mkdir -p "$d/$case.out" && ( cd "$d/$case" && zip -q -r "$d/$case.out/ratelimit-otel-$v.zip" . ) || exit 1
+      if "$root/$archiver" check "$d/$case.out/ratelimit-otel-$v.zip"; then echo "check accepted the $case archive"; exit 1; fi
+    done
+    cp "$d/versioned/$zip" "$d/ratelimit-otel-9.9.8.zip" || exit 1
+    if "$root/$archiver" check "$d/ratelimit-otel-9.9.8.zip"; then echo "check accepted a misnamed archive"; exit 1; fi
+    cp "$d/versioned/$zip" "$d/ratelimit-otel-$probe_version.ZIP" || exit 1
+    if "$root/$archiver" check "$d/ratelimit-otel-$probe_version.ZIP"; then echo "check accepted a name outside the asset pattern"; exit 1; fi
+  )
+  rc=$?
+  rm -rf "$d"
+  return $rc
+}
+
 # The small lane carries two classes of node, per the profile's `Small node:`.
 # A directory is a test node; anything else is the path of a changed document,
 # which no test runner can take. `docs` is the class, resolved once here so each
@@ -126,6 +165,15 @@ if [ "$class" = code ]; then
     run release manifest_writer_writes
   else
     mark release unavailable
+  fi
+
+  # archive: the release archive is public surface (ADR-0006) and is built only
+  # on `main` mid-release, so without this gate a wrong layout fails the fleet's
+  # install rather than the PR that caused it.
+  if [ -f "$archiver" ] && [ -f "$manifest" ]; then
+    run archive release_archive_checks
+  else
+    mark archive unavailable
   fi
 
   # marketplace: the root manifest is engine-read public surface (docs/agents/ship.md,
