@@ -1,5 +1,5 @@
 import { expect, mock, test } from "claude-code/testing";
-import type { HttpInit, On, SessionRateLimit } from "claude-code";
+import type { HttpInit, On, SessionMeasureInput, SessionRateLimit } from "claude-code";
 
 // 2025-09-21T19:20:00.000Z, with the window resetting 1800 seconds later.
 const NOW = 1_758_482_400_000;
@@ -9,6 +9,7 @@ const ENDPOINT = "http://collector.invalid:4318";
 const FIVE_HOUR: SessionRateLimit = { kind: "five_hour", percentUsed: 23.5, resetsAt: RESETS_AT };
 
 type Post = { url: string; init: HttpInit | undefined };
+type Response = { status: number; ok: boolean; headers: Record<string, string>; text: string };
 
 /**
  * The world beneath the plugin for one sampler test: the mocked nouns, plus the
@@ -18,9 +19,11 @@ function world(
   on: On,
   options: {
     env?: Record<string, string>;
-    rateLimits?: SessionRateLimit[];
+    /** Read on every sample, so a test can move a window between triggers. */
+    rateLimits?: () => SessionRateLimit[];
     claudeJson?: unknown;
-    respond?: () => { status: number; ok: boolean; headers: Record<string, string>; text: string };
+    /** A promise that never settles is how an unanswered POST is expressed. */
+    respond?: () => Response | Promise<Response>;
     /** Read on every sample, so a test can move to a second session mid-run. */
     sessionId?: () => string;
     /** Answers `$.fs.read`; throwing it is how an unreadable `~/.claude.json` is expressed. */
@@ -28,7 +31,6 @@ function world(
   } = {},
 ) {
   const clock = mock.clock(on, { now: NOW });
-  mock.store(on);
   mock.env(
     on,
     options.env ?? {
@@ -39,14 +41,14 @@ function world(
   );
 
   const posts: Post[] = [];
-  on("http.fetch", (_$, e) => {
+  on("http.fetch", async (_$, e) => {
     posts.push({ url: e.url, init: e.init });
     return {
-      value: options.respond?.() ?? { status: 200, ok: true, headers: {}, text: '{"partialSuccess":{}}' },
+      value: (await options.respond?.()) ?? { status: 200, ok: true, headers: {}, text: '{"partialSuccess":{}}' },
     };
   });
   on("session.usage", () => ({
-    value: { context: { window: 200_000 }, rateLimits: options.rateLimits ?? [FIVE_HOUR] },
+    value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: options.rateLimits?.() ?? [FIVE_HOUR] },
   }));
   on("session.id", () => ({ value: options.sessionId?.() ?? "sess-1" }));
   on("fs.read", () => ({
@@ -54,7 +56,7 @@ function world(
   }));
   on("ui.log", () => ({ value: undefined }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
-  on("turn.complete", (_$, e) => ({ text: e.answer }));
+  on("session.measure", (_$, e) => ({ changed: e.changed }));
   on("session.end", (_$, e) => ({ sessionId: e.sessionId }));
 
   return { clock, posts };
@@ -66,7 +68,8 @@ const resourceKeys = (post: Post | undefined): string[] =>
     (a: { key: string }) => a.key,
   );
 
-const aTurn = { answer: "done", durationMs: 1, isAborted: false, turnId: "t1", reason: "answer" } as const;
+/** The plugin reads the windows off `$.session.usage()`, so this event's own are never consulted. */
+const aMeasure: SessionMeasureInput = { context: { window: 200_000 }, rateLimits: [FIVE_HOUR], changed: ["rateLimits"] };
 const anEnd = { reason: "other", sessionId: "sess-1", resume: { id: "sess-1" } } as const;
 
 test("says it loaded on the debug log when a session starts", async ($, on) => {
@@ -83,10 +86,11 @@ test("says it loaded on the debug log when a session starts", async ($, on) => {
   expect(logged).toEqual([{ text: "ratelimit-otel loaded", to: "debug" }]);
 });
 
-test("a completed turn POSTs the sample as OTLP JSON to the endpoint's /v1/metrics", async ($, on) => {
-  const { posts } = world(on);
+test("the engine measuring the session POSTs the sample as OTLP JSON to the endpoint's /v1/metrics", async ($, on) => {
+  const { clock, posts } = world(on);
 
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts.length).toBe(1);
   expect(posts[0]?.url).toBe(`${ENDPOINT}/v1/metrics`);
@@ -105,90 +109,167 @@ test("a completed turn POSTs the sample as OTLP JSON to the endpoint's /v1/metri
   expect(metrics[0].gauge.dataPoints[0].asDouble).toBe(23.5);
 });
 
-test("a session starting takes no sample and starts the clock that does", async ($, on) => {
+test("a session starting takes no sample and starts no clock", async ($, on) => {
   const { clock, posts } = world(on);
 
   await $.session.start({ cwd: "/tmp", surface: null, isInteractive: false });
-  expect(posts.length).toBe(0);
+  await clock.advance(60 * 60_000);
 
-  await clock.advance(5 * 60_000);
+  expect(posts.length).toBe(0);
+});
+
+test("a reading with no movement since the last delivery sends nothing, on either trigger", async ($, on) => {
+  const { clock, posts } = world(on);
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  await $.session.end(anEnd);
+
   expect(posts.length).toBe(1);
 });
 
-test("the delivery floor holds a second sample inside five minutes and lets the next through", async ($, on) => {
-  const { clock, posts } = world(on);
+test("a whole-point move delivers and a sub-point move does not", async ($, on) => {
+  let limits = [FIVE_HOUR];
+  const { clock, posts } = world(on, { rateLimits: () => limits });
 
-  await $.turn.complete(aTurn);
-  await clock.advance(4 * 60_000);
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  limits = [{ ...FIVE_HOUR, percentUsed: 23.9 }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
   expect(posts.length).toBe(1);
 
-  await clock.advance(60_000);
-  await $.turn.complete(aTurn);
+  limits = [{ ...FIVE_HOUR, percentUsed: 24.1 }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
   expect(posts.length).toBe(2);
 });
 
-test("no endpoint means no send: the sample is skipped, not queued", async ($, on) => {
-  const { posts } = world(on, { env: { HOME: "/home/dev" } });
+test("a window that rolled over delivers at the same percentage", async ($, on) => {
+  let limits = [FIVE_HOUR];
+  const { clock, posts } = world(on, { rateLimits: () => limits });
 
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  limits = [{ ...FIVE_HOUR, resetsAt: "2025-09-22T00:50:00.000Z" }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(posts.length).toBe(2);
+});
+
+test("a window appearing for the first time delivers", async ($, on) => {
+  let limits = [FIVE_HOUR];
+  const { clock, posts } = world(on, { rateLimits: () => limits });
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  limits = [FIVE_HOUR, { kind: "seven_day", percentUsed: 2.5 }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(posts.length).toBe(2);
+});
+
+test("a movement of a window that maps to nothing is no movement", async ($, on) => {
+  let limits: SessionRateLimit[] = [FIVE_HOUR, { kind: "spend_limit", percentUsed: 10 }];
+  const { clock, posts } = world(on, { rateLimits: () => limits });
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  limits = [FIVE_HOUR, { kind: "spend_limit", percentUsed: 40 }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(posts.length).toBe(1);
+});
+
+test("no endpoint means no send: the sample is skipped, not queued", async ($, on) => {
+  const { clock, posts } = world(on, { env: { HOME: "/home/dev" } });
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts.length).toBe(0);
 });
 
 test("an endpoint set to nothing is no endpoint", async ($, on) => {
-  const { posts } = world(on, { env: { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: "" } });
+  const { clock, posts } = world(on, { env: { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: "" } });
 
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts.length).toBe(0);
 });
 
 test("a trailing slash on the endpoint does not become a doubled path", async ($, on) => {
-  const { posts } = world(on, { env: { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: `${ENDPOINT}/` } });
+  const { clock, posts } = world(on, { env: { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: `${ENDPOINT}/` } });
 
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts[0]?.url).toBe(`${ENDPOINT}/v1/metrics`);
 });
 
 test("windows that map to nothing send nothing", async ($, on) => {
-  const { posts } = world(on, { rateLimits: [{ kind: "spend_limit", percentUsed: 112 }] });
+  const { clock, posts } = world(on, { rateLimits: () => [{ kind: "spend_limit", percentUsed: 112 }] });
 
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts.length).toBe(0);
 });
 
 test("the account attributes go out on the first delivery and not on the next", async ($, on) => {
+  let limits = [FIVE_HOUR];
   const { clock, posts } = world(on, {
     claudeJson: { oauthAccount: { emailAddress: "dev@example.com", seatTier: "enterprise" } },
+    rateLimits: () => limits,
   });
 
-  await $.turn.complete(aTurn);
-  await clock.advance(5 * 60_000);
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  limits = [{ ...FIVE_HOUR, percentUsed: 30 }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(resourceKeys(posts[0])).toEqual(["service.name", "user.email", "session.id", "seat.tier"]);
   expect(resourceKeys(posts[1])).toEqual(["service.name", "user.email", "session.id"]);
 });
 
-test("a refused delivery consumes neither the floor nor the account attributes", async ($, on) => {
-  const { posts } = world(on, {
+test("a refused delivery leaves the movement pending, account attributes included", async ($, on) => {
+  const { clock, posts } = world(on, {
     claudeJson: { oauthAccount: { emailAddress: "dev@example.com", seatTier: "enterprise" } },
     respond: () => ({ status: 503, ok: false, headers: {}, text: "unavailable" }),
   });
 
-  await $.turn.complete(aTurn);
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts.length).toBe(2);
-  const attributes = JSON.parse(posts[1]?.init?.body ?? "{}").resourceMetrics[0].resource.attributes;
-  expect(attributes.map((a: { key: string }) => a.key)).toContain("seat.tier");
+  expect(resourceKeys(posts[1])).toContain("seat.tier");
 });
 
+test("a rejected delivery leaves the movement pending", async ($, on) => {
+  const { clock, posts } = world(on, {
+    respond: () => {
+      throw new Error("ECONNRESET");
+    },
+  });
 
-test("the account attributes go out again in the next session", async ($, on) => {
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(posts.length).toBe(2);
+});
+
+test("each session delivers its own first reading, account attributes included", async ($, on) => {
   let sessionId = "sess-1";
   const { clock, posts } = world(on, {
     env: { HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT },
@@ -196,17 +277,19 @@ test("the account attributes go out again in the next session", async ($, on) =>
     sessionId: () => sessionId,
   });
 
-  await $.turn.complete(aTurn);
-  await clock.advance(5 * 60_000);
+  await $.session.measure(aMeasure);
+  await clock.settle();
   sessionId = "sess-2";
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
+  expect(posts.length).toBe(2);
   expect(resourceKeys(posts[0])).toContain("seat.tier");
   expect(resourceKeys(posts[1])).toContain("seat.tier");
 });
 
 test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs", async ($, on) => {
-  const { posts } = world(on, {
+  const { clock, posts } = world(on, {
     env: {
       OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT,
       OTEL_RESOURCE_ATTRIBUTES: "user.email=env@example.com",
@@ -216,7 +299,8 @@ test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs",
     },
   });
 
-  await $.turn.complete(aTurn);
+  await $.session.measure(aMeasure);
+  await clock.settle();
 
   expect(posts.length).toBe(1);
   expect(JSON.parse(posts[0]?.init?.body ?? "{}").resourceMetrics[0].resource.attributes).toEqual([
@@ -226,8 +310,8 @@ test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs",
   ]);
 });
 
-test("a session ending takes a sample, so the window's last state is observed", async ($, on) => {
-  const { posts } = world(on);
+test("a session ending with nothing delivered yet takes a sample", async ($, on) => {
+  const { clock, posts } = world(on);
 
   await $.session.end(anEnd);
 
@@ -235,27 +319,16 @@ test("a session ending takes a sample, so the window's last state is observed", 
   expect(posts[0]?.url).toBe(`${ENDPOINT}/v1/metrics`);
 });
 
-test("a session ending waives the delivery floor, which is the tail it exists to catch", async ($, on) => {
-  const { clock, posts } = world(on);
+test("a measurement returns before its POST settles, and the session end resends what never landed", async ($, on) => {
+  let answer: () => Response | Promise<Response> = () => new Promise<Response>(() => {});
+  const { clock, posts } = world(on, { respond: () => answer() });
 
-  await $.turn.complete(aTurn);
-  await clock.advance(3 * 60_000);
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  expect(posts.length).toBe(1);
+
+  answer = () => ({ status: 200, ok: true, headers: {}, text: "{}" });
   await $.session.end(anEnd);
 
   expect(posts.length).toBe(2);
-  const metrics = JSON.parse(posts[1]?.init?.body ?? "{}").resourceMetrics[0].scopeMetrics[0].metrics;
-  expect(metrics[0].name).toBe("claude_code.usage.utilization");
-  expect(metrics[0].gauge.dataPoints[0].asDouble).toBe(23.5);
-});
-
-test("the delivery a session end makes still holds the floor for what follows it", async ($, on) => {
-  const { clock, posts } = world(on);
-
-  await $.session.end(anEnd);
-  expect(posts.length).toBe(1);
-
-  await clock.advance(60_000);
-  await $.turn.complete(aTurn);
-
-  expect(posts.length).toBe(1);
 });

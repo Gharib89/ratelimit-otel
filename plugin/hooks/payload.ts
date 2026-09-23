@@ -13,6 +13,11 @@ const SCOPE_NAME = "cc-otel.plugin";
 /** ADR-0001: only these two window kinds have ever reached production. */
 const WINDOW_BY_KIND: Record<string, string> = { five_hour: "5h", seven_day: "7d" };
 
+/** Whether a window of this kind is emitted at all, so whether its movement is worth a delivery. */
+export function isEmitted(kind: string): boolean {
+  return WINDOW_BY_KIND[kind] !== undefined;
+}
+
 /** What a sample's records are attributed to; every field but the session is optional (ADR-0003). */
 export type Identity = {
   email?: string;
