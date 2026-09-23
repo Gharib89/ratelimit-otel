@@ -18,8 +18,8 @@
 # from the same build.
 #
 # check refuses a zip whose root is not the plugin directory's contents, has no
-# hooks/, carries a test file, or whose manifest version disagrees with the
-# version in its file name. Whether the engine tolerates any other root is
+# hooks/hooks.json, carries a test file, is not named ratelimit-otel-<version>.zip,
+# or whose manifest version disagrees with the version in that name. Whether the engine tolerates any other root is
 # unmeasured, so the check holds the layout ADR-0006 fixes; the asset name is
 # what the console's URL is built from.
 #
@@ -34,7 +34,7 @@ fail() { echo "release-archive: $*" >&2; exit 1; }
 check() {
   local zip=$1 entries tests version
   entries=$(unzip -Z1 "$zip") || fail "$zip: not a readable zip"
-  grep -q '^hooks/' <<<"$entries" || fail "$zip: no hooks/ at the zip root"
+  grep -Fxq hooks/hooks.json <<<"$entries" || fail "$zip: no hooks/hooks.json at the zip root"
   tests=$(grep -E '\.test\.tsx?$' <<<"$entries")
   [ -z "$tests" ] || fail "$zip: carries test files: $(tr '\n' ' ' <<<"$tests")"
   version=$(unzip -p "$zip" "$manifest" | jq -er '.version | strings') \
@@ -44,6 +44,7 @@ check() {
     ratelimit-otel-*.zip)
       named=${base#ratelimit-otel-}; named=${named%.zip}
       [ "$named" = "$version" ] || fail "$zip: named $named but its manifest says $version" ;;
+    *) fail "$zip: not named ratelimit-otel-<version>.zip" ;;
   esac
 }
 
