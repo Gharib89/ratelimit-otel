@@ -7,3 +7,6 @@ node_modules/
 # The cc-otel prod read connection, for verifying that a delivery reached
 # `raw.metrics`. Never committed: this repo is public.
 .env
+
+# The release archive, built by scripts/release-archive.sh mid-release.
+dist/

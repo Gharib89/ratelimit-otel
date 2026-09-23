@@ -58,6 +58,34 @@ manifest_writer_writes() {
   return $rc
 }
 
+# The `archive` gate's body. The release archive is built only inside a release,
+# so this builds it from the checkout and requires the layout check to pass, then
+# hands the check three archives it must refuse, one per refusal: the manifest
+# below the root, no hooks/, and a test file included.
+archiver="scripts/release-archive.sh"
+release_archive_checks() {
+  local root=$PWD d rc zip=ratelimit-otel-$probe_version.zip
+  d=$(mktemp -d) || return 1
+  (
+    "$root/$archiver" build "$d/out" >/dev/null || exit 1
+    "$root/$archiver" build "$d/versioned" "$probe_version" >/dev/null || exit 1
+    [ "$(unzip -p "$d/versioned/$zip" .claude-plugin/plugin.json | jq -r .version)" = "$probe_version" ] || exit 1
+    ( cd "$d/versioned" && sha256sum --quiet -c "$zip.sha256" ) || exit 1
+    # hooks/ at the root but the manifest one level down, so only the root check can refuse it.
+    mkdir -p "$d/nested/plugin" && cp -r "$root/plugin/hooks" "$d/nested/" \
+      && cp -r "$root/plugin/.claude-plugin" "$d/nested/plugin/" \
+      && ( cd "$d/nested" && zip -q -r "$d/nested.zip" . -x '*.test.ts' ) || exit 1
+    if "$root/$archiver" check "$d/nested.zip"; then echo "check accepted a nested manifest"; exit 1; fi
+    ( cd "$root/plugin" && zip -q -r "$d/nohooks.zip" .claude-plugin ) || exit 1
+    if "$root/$archiver" check "$d/nohooks.zip"; then echo "check accepted no hooks/"; exit 1; fi
+    ( cd "$root/plugin" && zip -q -r "$d/tests.zip" .claude-plugin hooks ) || exit 1
+    if "$root/$archiver" check "$d/tests.zip"; then echo "check accepted a test file"; exit 1; fi
+  )
+  rc=$?
+  rm -rf "$d"
+  return $rc
+}
+
 # The small lane carries two classes of node, per the profile's `Small node:`.
 # A directory is a test node; anything else is the path of a changed document,
 # which no test runner can take. `docs` is the class, resolved once here so each
@@ -126,6 +154,15 @@ if [ "$class" = code ]; then
     run release manifest_writer_writes
   else
     mark release unavailable
+  fi
+
+  # archive: the release archive is public surface (ADR-0006) and is built only
+  # on `main` mid-release, so without this gate a wrong layout fails the fleet's
+  # install rather than the PR that caused it.
+  if [ -f "$archiver" ] && [ -f "$manifest" ]; then
+    run archive release_archive_checks
+  else
+    mark archive unavailable
   fi
 
   # marketplace: the root manifest is engine-read public surface (docs/agents/ship.md,
