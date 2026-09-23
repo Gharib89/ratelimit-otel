@@ -37,7 +37,7 @@
 #   host_issue_has_label <n> <label>     -> exit 0 when present
 #   host_issue_add_label <n> <label>
 #   host_issue_remove_label <n> <label>  (no-op success when absent)
-#   host_issue_comment <n> <body>
+#   host_issue_comment <n> <body>        (on failure, a {status} where the adapter reports one)
 #   host_issue_close <n>
 #   host_issue_create <title> <body-file> <label> -> {number,url}
 #   host_issues_open                     -> [{number,title,url}] every open issue, newest first,

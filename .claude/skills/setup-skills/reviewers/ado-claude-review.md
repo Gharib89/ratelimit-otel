@@ -30,7 +30,7 @@ steps:
     2. Run 'git diff HEAD^1 HEAD' and review only the changed lines against those instructions and the standards they name.
     3. Run 'git log --format=%B HEAD^2 -n 20' and, if a work item is referenced (#1234 or AB#1234),
        treat its intent as the spec for this change.
-    Return ONLY findings that require a code change. Severity: critical = must fix before merge
+    Return only findings that require a code change. Severity: critical = must fix before merge
     (correctness, security, data loss, a MUST rule in the standards); major = a standards rule;
     minor = style. file is repo-relative, line is the line in the new file.
     Files under .claude/skills/ are derived copies installed verbatim by the skills CLI and recorded in

@@ -7,13 +7,33 @@ released version. See
 
 <!-- version list -->
 
-## v8.0.0 (2026-09-21)
+## v5.1.2 (2026-09-23)
+
+### Documentation
+
+- **ship**: Agent-facing is the one rule, subagents write their own Report files, derived-copy
+  pointer rule ([#245](https://github.com/Gharib89/skills/pull/245),
+  [`c3b3e89`](https://github.com/Gharib89/skills/commit/c3b3e8907859cc343442f05aad3dc4783f61b722))
+
+
+## v5.1.1 (2026-09-23)
 
 ### Bug Fixes
 
-- **ship**: Re-stamp a skipped phase's reason and bound the role lookup
-  ([#230](https://github.com/Gharib89/skills/pull/230),
-  [`d25170f`](https://github.com/Gharib89/skills/commit/d25170f861ad56bb96bfe6e574fd6924cf52645c))
+- **ship**: Drop dated prompt patterns found by a prompt audit
+  ([`c4e475e`](https://github.com/Gharib89/skills/commit/c4e475e2d89af2ad7b81d594990ad695460c3522))
+
+
+## v5.1.0 (2026-09-21)
+
+### Features
+
+- **ship**: The PR body states the door and the blast radius
+  ([#237](https://github.com/Gharib89/skills/pull/237),
+  [`5f6a870`](https://github.com/Gharib89/skills/commit/5f6a87093c08e94667b719c5a628d9375cdbeed4))
+
+
+## v5.0.0 (2026-09-21)
 
 ### Features
 

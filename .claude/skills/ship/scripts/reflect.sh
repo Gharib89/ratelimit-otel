@@ -20,7 +20,7 @@ url=$(host_pr_get "$pr" | jq -r .url) || ship_tooling "cannot read PR $pr"
 line="PR: $url"
 posted=false
 if ! host_issue_comments "$n" | jq -e --arg l "$line" 'any(.[]; .body == $l)' >/dev/null; then
-  host_issue_comment "$n" "$line" || ship_fail "comment on issue #$n failed"
+  host_issue_comment "$n" "$line" >/dev/null || ship_fail "comment on issue #$n failed"
   posted=true
 fi
 jq -n --argjson n "$n" --argjson pr "$pr" --arg u "$url" --argjson p "$posted" '{issue: $n, pr: $pr, url: $u, posted: $p}'

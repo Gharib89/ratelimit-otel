@@ -98,9 +98,9 @@ and each pair is written from one result so the two cannot disagree:
   outlive the run.
 
 The `Self-review` block is read from the phase-4 Report files
-[context-discipline.md](context-discipline.md) has the run write, one row per
-report naming the file its findings came from: both `code-review` axes, and the
-`writing-for-agents` pass where it fired. A row whose file is no longer on disk
+[context-discipline.md](context-discipline.md) has each subagent write, one row
+per report naming the file its findings came from: both `code-review` axes, and
+the `writing-for-agents` pass where it fired. A row whose file is no longer on disk
 takes the `unverified` rule above rather than the transcript.
 
 **Every count in this summary and in the PR body that measures the tree is a

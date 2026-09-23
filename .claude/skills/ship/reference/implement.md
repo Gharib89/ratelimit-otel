@@ -78,8 +78,9 @@ phases 4 and 7 send their own out-of-scope findings back here.
 - **`file-issue` it** with the profile's triage marker and leave it. The
   mechanic answers `filed: false` with candidates when an open issue's title
   shares three or more tokens with yours, and each candidate is **read**: the
-  same finding is linked in the deviations log rather than refiled, a different
-  one is refiled with `--distinct-from`.
+  same finding is linked in the deviations log rather than refiled, and
+  `comment-issue` posts any evidence this run adds to it; a different one is
+  refiled with `--distinct-from`.
 - **Stop `mis-specified`**, where the find shows the issue itself is wrong.
 
 The merge summary lists every issue filed and every candidate linked.

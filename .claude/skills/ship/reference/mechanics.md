@@ -44,6 +44,7 @@ local-gate contract, and that script answers no `--help`.
 | `read-pr` | 6 and 7, reading a PR back after a title or body write |
 | `poll-pr` | 7, 8 |
 | `request-review` | 7 |
+| `comment-issue` | 2, 4, 7 |
 | `comment-pr` | 7, 9 |
 | `reply-thread` | 7 |
 | `update-pr-body` | 7 |
@@ -76,11 +77,12 @@ none is red.
 
 ## What a failed write says
 
-A failed write to an open PR's body or title, a comment or a thread reply
-carries the host's `status` beside its `error`: a 5xx or a 429 outlasted the
-mechanic's own backoff, so retrying is the fix; any other number is the request
-itself, so read the body you sent. `null` is neither: the call got no HTTP
-answer at all, so the host or the tooling between you and it is what to look at.
+A failed write to an open PR's body or title, a comment on a PR or an issue,
+or a thread reply carries the host's `status` beside its `error`: a 5xx or a
+429 outlasted the mechanic's own backoff, so retrying is the fix; any other
+number is the request itself, so read the body you sent. `null` is neither: the
+call got no HTTP answer at all, so the host or the tooling between you and it is
+what to look at.
 `open-pr` and `file-issue` answer with the error alone, and their stderr carries
 the host's own message. Read the JSON, then decide.
 

@@ -2,7 +2,7 @@
   "version": 1,
   "skills": {
     "cloud-ship": {
-      "source": "gharib89/skills",
+      "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/cloud-ship/SKILL.md",
       "computedHash": "c1acfb119fe91ecfe4f1f1437b91cdaad6ce51c2e43f292e80a2d98bc2ab5a34"
@@ -20,16 +20,16 @@
       "computedHash": "93ec2d2786d7e83973252383875c4f345a2ee7cbbd08a1ab38e5201b214640ee"
     },
     "setup-skills": {
-      "source": "gharib89/skills",
+      "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/setup-skills/SKILL.md",
-      "computedHash": "b488d7d10b31e038c300319a27512c68b0aa301adf9ab9e7b40be1fe240e1e7d"
+      "computedHash": "fcbc1edbee21f012e6bc3a5b7808132bff7e1db6e7f86a0222d94fbafa3a620f"
     },
     "ship": {
-      "source": "gharib89/skills",
+      "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/ship/SKILL.md",
-      "computedHash": "bd37cecce0a29aba5500f031ef6b3f61e3782a16c180d56d74759aeb2144f5be"
+      "computedHash": "64b68d0a28a4b4500248e66f70dd0c7641a2a331e63e1d589bf2eb1d4c9035b2"
     },
     "show-me": {
       "source": "humanlayer/skills",
