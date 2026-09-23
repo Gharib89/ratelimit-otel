@@ -60,8 +60,9 @@ manifest_writer_writes() {
 
 # The `archive` gate's body. The release archive is built only inside a release,
 # so this builds it from the checkout and requires the layout check to pass, then
-# hands the check three archives it must refuse, one per refusal: the manifest
-# below the root, no hooks/, and a test file included.
+# hands the check four archives it must refuse, one per refusal: the manifest
+# below the root, no hooks/, a test file included, and a file name whose
+# version disagrees with the manifest's.
 archiver="scripts/release-archive.sh"
 release_archive_checks() {
   local root=$PWD d rc zip=ratelimit-otel-$probe_version.zip
@@ -80,6 +81,8 @@ release_archive_checks() {
     if "$root/$archiver" check "$d/nohooks.zip"; then echo "check accepted no hooks/"; exit 1; fi
     ( cd "$root/plugin" && zip -q -r "$d/tests.zip" .claude-plugin hooks ) || exit 1
     if "$root/$archiver" check "$d/tests.zip"; then echo "check accepted a test file"; exit 1; fi
+    cp "$d/versioned/$zip" "$d/ratelimit-otel-9.9.8.zip" || exit 1
+    if "$root/$archiver" check "$d/ratelimit-otel-9.9.8.zip"; then echo "check accepted a misnamed archive"; exit 1; fi
   )
   rc=$?
   rm -rf "$d"

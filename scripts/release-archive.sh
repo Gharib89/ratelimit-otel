@@ -10,12 +10,18 @@
 # from the staged manifest, so the manifest version stays the only copy. It then
 # runs check and writes <zip>.sha256 beside it. stdout carries release-notes
 # markdown and nothing else, because @semantic-release/exec's generateNotesCmd
-# appends stdout to the notes; logs go to stderr.
+# appends stdout to the notes; logs go to stderr. generateNotes runs before
+# prepare, which is why the version is stamped into a staged copy rather than
+# read from the committed manifest; prepareCmd then compares the two. It runs
+# again after @semantic-release/git commits, so the zip is rebuilt from the
+# release commit and the uploaded zip and the sha256 in the notes always come
+# from the same build.
 #
 # check refuses a zip whose root is not the plugin directory's contents, has no
 # hooks/, carries a test file, or whose manifest version disagrees with the
-# version in its file name. The docs do not say the engine tolerates any other
-# root, and the asset name is what the console's URL is built from.
+# version in its file name. Whether the engine tolerates any other root is
+# unmeasured, so the check holds the layout ADR-0006 fixes; the asset name is
+# what the console's URL is built from.
 #
 # exit: 0 ok · 1 a check failed · 2 usage
 set -uo pipefail
@@ -26,10 +32,11 @@ manifest=".claude-plugin/plugin.json"
 fail() { echo "release-archive: $*" >&2; exit 1; }
 
 check() {
-  local zip=$1 entries version
+  local zip=$1 entries tests version
   entries=$(unzip -Z1 "$zip") || fail "$zip: not a readable zip"
   grep -q '^hooks/' <<<"$entries" || fail "$zip: no hooks/ at the zip root"
-  ! grep -E '\.test\.tsx?$' <<<"$entries" >&2 || fail "$zip: carries the test files above"
+  tests=$(grep -E '\.test\.tsx?$' <<<"$entries")
+  [ -z "$tests" ] || fail "$zip: carries test files: $(tr '\n' ' ' <<<"$tests")"
   version=$(unzip -p "$zip" "$manifest" | jq -er '.version | strings') \
     || fail "$zip: no $manifest with a string version at the zip root"
   local base=${zip##*/} named
