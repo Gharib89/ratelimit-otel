@@ -19,9 +19,9 @@
 #
 # check refuses a zip whose root is not the plugin directory's contents, has no
 # hooks/hooks.json, carries a test file, is not named ratelimit-otel-<version>.zip,
-# or whose manifest version disagrees with the version in that name. Whether the engine tolerates any other root is
-# unmeasured, so the check holds the layout ADR-0006 fixes; the asset name is
-# what the console's URL is built from.
+# or whose manifest version disagrees with the version in that name. Whether
+# the engine tolerates any other root is unmeasured, so the check holds the
+# layout ADR-0006 fixes; the asset name is what the console's URL is built from.
 #
 # exit: 0 ok · 1 a check failed · 2 usage
 set -uo pipefail
