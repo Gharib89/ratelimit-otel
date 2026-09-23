@@ -12,7 +12,7 @@ import { accountAttributesFrom, buildPayload, headersFrom, identityFrom, isEmitt
  * ADR-0001's once-per-session account attributes: they go out while nothing has
  * landed for this session.
  */
-let landed: { sessionId: string; windows: Map<string, string> } | undefined;
+let lastLanded: { sessionId: string; windows: Map<string, string> } | undefined;
 
 /**
  * What an emitted window is compared on: a sub-point move is no movement, a
@@ -29,9 +29,9 @@ function windowsOf(rateLimits: readonly SessionRateLimit[]): Map<string, string>
 
 /** A window moved when it is newly present or differs from what last landed for this session. */
 function moved(sessionId: string, windows: Map<string, string>): boolean {
-  if (landed?.sessionId !== sessionId) return true;
+  if (lastLanded?.sessionId !== sessionId) return true;
   for (const [kind, reading] of windows) {
-    if (landed.windows.get(kind) !== reading) return true;
+    if (lastLanded.windows.get(kind) !== reading) return true;
   }
   return false;
 }
@@ -76,7 +76,7 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
     claudeUserEmail: await $.env.get("CLAUDE_USER_EMAIL"),
     sessionId,
   });
-  const account = landed?.sessionId === sessionId ? undefined : accountAttributesFrom(claudeJson);
+  const account = lastLanded?.sessionId === sessionId ? undefined : accountAttributesFrom(claudeJson);
   const payload = buildPayload(usage, identity, await $.clock.now(), account);
   if (payload === undefined) return;
 
@@ -97,7 +97,7 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
     .catch(() => undefined);
   if (response?.ok !== true) return;
 
-  landed = { sessionId, windows };
+  lastLanded = { sessionId, windows };
 }
 
 /**
