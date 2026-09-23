@@ -12,7 +12,7 @@ import { accountAttributesFrom, buildPayload, headersFrom, identityFrom, isEmitt
  * ADR-0001's once-per-session account attributes: they go out while nothing has
  * landed for this session.
  */
-let lastLanded: { sessionId: string; windows: Map<string, string> } | undefined;
+let lastLanded: { sessionId: string; windows: Map<string, string>; at: number } | undefined;
 
 /**
  * What an emitted window is compared on: a sub-point move is no movement, a
@@ -77,7 +77,8 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
     sessionId,
   });
   const account = lastLanded?.sessionId === sessionId ? undefined : accountAttributesFrom(claudeJson);
-  const payload = buildPayload(usage, identity, await $.clock.now(), account);
+  const now = await $.clock.now();
+  const payload = buildPayload(usage, identity, now, account);
   if (payload === undefined) return;
 
   // A refused connection is measured, not hypothetical: a cloud sandbox's egress
@@ -97,7 +98,10 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
     .catch(() => undefined);
   if (response?.ok !== true) return;
 
-  lastLanded = { sessionId, windows };
+  // POSTs are detached, so an older one can land after a newer one; it must
+  // not put the gate back to the reading the newer one already replaced.
+  if (lastLanded !== undefined && now < lastLanded.at) return;
+  lastLanded = { sessionId, windows, at: now };
 }
 
 /**
@@ -113,7 +117,7 @@ const startSession: Hook<"session.start"> = ($, e, next) => {
 /**
  * The engine pushes a measurement after each main-thread turn and whenever a
  * window moves a whole point, a subagent's response included (ADR-0005), so it
- * is the sampler's clock. `e.changed` is not read: the movement gate decides.
+ * is what drives the sampler. `e.changed` is not read: the movement gate decides.
  *
  * The POST is detached: awaited, one still running when the next prompt goes
  * out holds that turn's API request for 3 s (ADR-0005). `$` stays usable in the

@@ -36,8 +36,7 @@ read: the gate decides. `session.start` keeps only its debug line.
 returns `next(e)` at once; the gate advances in the detached work. On
 `session.end` the POST is awaited, because a detached one there is lost. With
 the uniform gate, `session.end` POSTs only when a movement never landed,
-including one still in flight at exit. There is no in-flight guard: two POSTs
-of one movement can both land, which the consumer's max aggregation absorbs.
+including one still in flight at exit. There is no in-flight guard: two POSTs of one movement can both land, which the consumer's max aggregation absorbs. A POST landing after a newer one does not move the gate back to its older reading.
 
 Unchanged: the non-empty `rateLimits` gate, `spend_limit` skipped, the identity
 ladder, the account attributes once per session (now: while nothing has landed

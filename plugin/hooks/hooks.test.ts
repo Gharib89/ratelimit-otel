@@ -332,3 +332,29 @@ test("a measurement returns before its POST settles, and the session end resends
 
   expect(posts.length).toBe(2);
 });
+
+test("an older delivery landing late does not move the gate back", async ($, on) => {
+  let limits = [FIVE_HOUR];
+  const answers: ((response: Response) => void)[] = [];
+  const { clock, posts } = world(on, {
+    rateLimits: () => limits,
+    respond: () => new Promise<Response>((resolve) => answers.push(resolve)),
+  });
+  const ok: Response = { status: 200, ok: true, headers: {}, text: "{}" };
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  await clock.advance(1_000);
+  limits = [{ ...FIVE_HOUR, percentUsed: 24.1 }];
+  await $.session.measure(aMeasure);
+  await clock.settle();
+  answers[1]?.(ok);
+  await clock.settle();
+  answers[0]?.(ok);
+  await clock.settle();
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(posts.length).toBe(2);
+});
