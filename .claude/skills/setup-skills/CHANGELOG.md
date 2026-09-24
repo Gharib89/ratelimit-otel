@@ -7,6 +7,15 @@ released version. See
 
 <!-- version list -->
 
+## v5.4.0 (2026-09-24)
+
+### Features
+
+- **setup-skills**: The Claude reviewer posts its review with typed -F fields and names its denied
+  calls ([#283](https://github.com/Gharib89/skills/pull/283),
+  [`d58b728`](https://github.com/Gharib89/skills/commit/d58b7281084e3ecad2476d7eac94e19f5e93c3f5))
+
+
 ## v5.3.0 (2026-09-24)
 
 ### Features

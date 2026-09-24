@@ -212,9 +212,10 @@ _latest_iteration() {
 _comment_login='(.author | if (.uniqueName // "") != "" then .uniqueName else .displayName end)'
 _author_login='(.comments[0] | '"$_comment_login"')'
 # Votes are the review rows; a reviewer that only opened threads on the latest
-# iteration counts as a substantive comment review on the head. `on_head` is
-# what poll-pr's default head rule reads; `all` carries every round across
-# iterations, for its --since rule.
+# iteration counts as a comment review on the head. `on_head` is what poll-pr's
+# default head rule reads; `all` carries every round across iterations, for its
+# --since rule. Which rows are rounds is `SHIP_SUBSTANTIVE`'s grade, applied in
+# poll-pr.
 #
 # A vote has no timestamp anywhere in the API, so its submitted_at is null: a
 # vote is the reviewer's current state, not a timed event, and it cannot answer
@@ -229,13 +230,13 @@ _utc='(sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z"))'
 # no text at all, hence "".
 # `id` is the thread's own id, which is also what `poll-pr --full` names to
 # read this round whole; a vote has no thread, hence null there.
-_review_row='(. as $r | {id: (.id | tostring), login: '"$_author_login"', state: "comment", substantive: true,
+_review_row='(. as $r | {id: (.id | tostring), login: '"$_author_login"', state: "comment",
               submitted_at: (.publishedDate | '"$_utc"'),
               body: ((.comments[0].content // "") | clip($r.id))})'
 host_pr_reviews() { # <pr> <head_sha> [<full-ids-json>]
   local votes it raw rows
   votes=$(azx repos pr reviewer list "${ORG[@]}" --id "$1" | jq '[.[] | select(.vote != 0)
-      | {id: null, login: .uniqueName, state: (if .vote > 0 then "approved" else "changes" end), substantive: true, submitted_at: null, body: ""}]') || return 1
+      | {id: null, login: .uniqueName, state: (if .vote > 0 then "approved" else "changes" end), submitted_at: null, body: ""}]') || return 1
   it=$(_latest_iteration "$1") || it='{"id":0,"created":""}'
   raw=$(_threads_raw "$1") || raw='{"value":[]}'
   # `all` is not deduped by login: --since asks whether ANY round landed after a

@@ -12,7 +12,9 @@ What both shapes do the same way, because ship reads a round off the host alone:
 - **`claude_code_oauth_token`** from the `CLAUDE_CODE_OAUTH_TOKEN` secret, minted by `claude setup-token`, so the review is billed to a Claude subscription rather than to API credit.
 - **`actions/checkout` before the action.** The action does not clone the repo, and it runs `git diff --name-only -z --relative --ignore-submodules HEAD --` in the workspace of its own accord, before the prompt runs. With no checkout that fails the job outright, `Action failed with error: ... warning: Not a git repository.`, and the job dies before the prompt runs: no review, no findings, and nothing on the PR to say why. Step 1 of the prompt needs it a second time, to read the instructions file off the filesystem.
 - **`--max-turns 60`.** A round reads a brief, a spec, a whole diff and then builds one POST, and a 30-turn cap does not cover a mid-size PR: the round exhausts it, logs `error_max_turns`, posts nothing, and still bills the turns it spent.
-- **An allowlist that covers every step of the prompt.** A tool the round needs and cannot call is a denied call, a spent turn and no explanation, and the run log reports `permission_denials_count` alone and names no command, so the list is derived from what the prompt's own steps ask for, plus the read-only verbs a round reaches for while sizing a large diff, rather than from a log. `Read`, `Grep` and `Glob` serve step 1's brief and standards; `Bash(gh pr view:*)` and `Bash(gh issue view:*)` step 2's spec; `Bash(gh pr diff:*)` step 3's diff; `Bash(gh api:*)` the POST; and `Bash(head:*)`, `Bash(tail:*)` and `Bash(wc:*)` because a pipe is refused unless **both** of its commands are granted, so `gh pr diff | wc -l` needs `wc` named too. Those three size a diff and leave the reviewing to step 3: step 3 says review what the one `gh pr diff` returned, and a `head` that truncates it leaves the tail unreviewed with nothing saying so. Deliberately no `git` entry, though [`ado-claude-review.md`](ado-claude-review.md) grants two: that prompt reaches for `git diff` because Azure DevOps has no `gh`, while both shapes here check out at `fetch-depth: 1` and read the diff through `gh pr diff`, so `git log` would have no history to read and neither prompt asks for either. Nothing here writes to the checkout, the one write it can make anywhere is the review POST the round exists for, and nothing reaches the network beyond `gh`. Narrow it and the round spends its turns on denied calls and posts nothing.
+- **An allowlist that covers every step of the prompt.** A tool the round needs and cannot call is a denied call and a spent turn, so the list is derived from what the prompt's own steps ask for, plus the read-only verbs a round reaches for while sizing a large diff, and the denial step below names any call it still misses. `Read`, `Grep` and `Glob` serve step 1's brief and standards; `Bash(gh pr view:*)` and `Bash(gh issue view:*)` step 2's spec; `Bash(gh pr diff:*)` step 3's diff; `Bash(gh api:*)` the POST; and `Bash(head:*)`, `Bash(tail:*)` and `Bash(wc:*)` because a pipe is refused unless **both** of its commands are granted, so `gh pr diff | wc -l` needs `wc` named too. Those three size a diff and leave the reviewing to step 3: step 3 says review what the one `gh pr diff` returned, and a `head` that truncates it leaves the tail unreviewed with nothing saying so. Deliberately no `git` entry, though [`ado-claude-review.md`](ado-claude-review.md) grants two: that prompt reaches for `git diff` because Azure DevOps has no `gh`, while both shapes here check out at `fetch-depth: 1` and read the diff through `gh pr diff`, so `git log` would have no history to read and neither prompt asks for either. Nothing here writes to the checkout, the one write it can make anywhere is the review POST the round exists for, and nothing reaches the network beyond `gh`. Narrow it and the round spends its turns on denied calls and posts nothing.
+- **A review POST of typed `-F` fields.** Claude Code's Bash security check refuses a heredoc of JSON before the allowlist is read, so a prompt prescribing `--input -` spends the round's closing turns on a refused POST and a hunt for a shape that is allowed. Every field, each inline comment's four `comments[][...]` fields included, is an `-F`, and the prompt carries the four traps that change what `-F` sends without an error.
+- **A step that names denied calls.** The action counts refusals and hides them, so a round that spent its turns on denied calls reads as clean. An always-run step reads the round's `permission_denials` from the action's `execution_file`, prints one `denied: <tool> <truncated input>` line per denial to the run log, which REST can read, and raises one warning annotation with the count; at zero it prints nothing, and a file it cannot read raises a warning saying so. The input is model-written, so the prefix keeps a line from starting a `::` command and every `#` in it is written as the JSON escape `\u0023`, because the runner honours a `##[` command anywhere in a line.
 - **A step that speaks when the job fails.** The action failing posts no review and no comment, so a ship run polling the PR reads `degraded: silent` under the on-push shape and cannot tell it from a reviewer that did not fire, which is the indistinguishability [ADR 0002](https://github.com/Gharib89/skills/blob/main/docs/adr/0002-fallback-reviewer-is-on-request-and-conditional.md) exists to prevent. Under the on-request shape the run read settles it, `poll-pr --reviewer` awaiting the run the block's `Workflow:` names and reading the failed run as `infra-error` with its URL, and the `if: failure()` step below leaves that URL on the PR for both shapes, with the failure subtype where the action left one and `unknown` where it did not. [`ado-claude-review.md`](ado-claude-review.md) carries the same step as a `condition: failed()` one posting a closed PR thread. It needs no permission the job did not already have: a comment on a pull request is posted to `/issues/{n}/comments`, and the `pull-requests: write` that admits the review POST admits that endpoint too on a pull request, with no `issues` scope at all (probed on a runner, [run on #174](https://github.com/Gharib89/skills/pull/174)). `issues: read` is there for step 2's `gh issue view`, and it stays at `read`: this job hands PR-controlled text to a model holding `Bash(gh api:*)`, so a scope beyond what the prompt's own steps ask for is a scope an injected prompt would get, and the failure comment above asks for none.
 
 Replace `__INSTRUCTIONS__` with the profile's `Instructions:` path for this reviewer: the repo's reviewer brief where it has one (a repo with Copilot keeps it at `.github/copilot-instructions.md`), else the `## Coding standards` path. The reviewer reads that file itself, rather than a copy of it. Where `__INSTRUCTIONS__` is the standards path itself, delete `Read the standards file it points at as well.` from the prompt.
@@ -90,22 +92,40 @@ jobs:
 
             Report the round as ONE formal pull request review, submitted in a
             single call, with every inline finding attached to it. Build it as
-            one command beginning with `gh api`, the JSON arriving by heredoc:
+            one `gh api` command whose every field is a typed `-F` flag:
 
                 gh api --method POST \
                   repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
-                  --input - <<'JSON'
-                {"event": "COMMENT",
-                 "body": "<the round's text, or exactly `no findings`>",
-                 "comments": [{"path": "<file>", "line": <line in the new file>,
-                               "side": "RIGHT", "body": "<one finding>"}]}
-                JSON
+                  -F 'event=COMMENT' \
+                  -F 'body=<text of the round, or exactly no findings>' \
+                  -F 'comments[][path]=<file>' \
+                  -F 'comments[][line]=<line in the new file>' \
+                  -F 'comments[][side]=RIGHT' \
+                  -F 'comments[][body]=<one finding>'
 
-            No other shape of that call works. `--allowedTools` below grants
-            `Bash(gh api:*)`, which matches a command that starts with
-            `gh api` and nothing else. Piping from `echo` makes `echo` the
-            command, the call is refused, and a refused call is a round
-            that stops before the PR.
+            Repeat the four `comments[][...]` flags, in that order, once per
+            finding; each new `path` starts the next comment. Single-quote every
+            value, writing an apostrophe inside one as '\''. Four traps:
+
+            - Use `-F` for every field, never `-f`: gh sends every `-f` field
+              ahead of every `-F` one, so mixing them detaches a `line` from its
+              comment.
+            - A value starting with `@` is read as a file path, so open each
+              value with a word: `the @types/node bump ...`, not
+              `@types/node bump ...`.
+            - gh fills in `{owner}`, `{repo}` and `{branch}` anywhere in a value,
+              so a finding quoting code that contains one writes it without the
+              braces (`repos/OWNER/REPO/pulls`).
+            - A value of exactly `true`, `false`, `null` or an integer is sent as
+              that JSON type: that is what makes `line` an integer, and a `body`
+              that is only a number or one of those words needs a word added.
+
+            The `-F` flags are the whole call: one command that starts with
+            `gh api` and reads nothing from stdin. That is the shape both gates
+            admit: Claude Code's Bash check refuses a heredoc of JSON before
+            `--allowedTools` is read, and `Bash(gh api:*)` below matches only a
+            command that starts with `gh api`, so piping from `echo` is refused
+            too. A refused call is a round that stops before the PR.
 
             One entry in `comments` per finding tied to a line, each naming the
             rule or issue requirement broken and the concrete fix. A finding you
@@ -117,14 +137,40 @@ jobs:
             Submit exactly one review, even when you found nothing: a reviewer
             that stays silent on a clean PR cannot be told apart from one that
             failed, and the run waits out its whole poll window either way. With
-            nothing actionable, send `body` of exactly `no findings` and an empty
-            `comments` list. Open `body` with the findings: the run reads its
+            nothing actionable, send `body` of exactly `no findings` and no
+            `comments` flags. Open `body` with the findings: the run reads its
             first 2000 characters, and a summary of the diff or praise ahead of
             them pushes them past that cut.
           claude_args: |
             --model opus
             --max-turns 60
             --allowedTools "Read,Grep,Glob,Bash(gh api:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(head:*),Bash(tail:*),Bash(wc:*)"
+
+      # The action logs `permission_denials_count` and hides which calls were
+      # refused, so a round that spent turns on denied calls looks clean. This
+      # names each one in the run log, which REST can read, and warns once with
+      # the count. The input is model-written and can quote PR text: the
+      # `denied: ` prefix keeps a line from starting a `::` command, and every
+      # `#` is written as its JSON escape because the runner also honours a
+      # `##[` command anywhere in a line.
+      - name: Name the denied tool calls
+        if: always() && steps.review.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          set -uo pipefail
+          [ -f "$EXECUTION_FILE" ] || exit 0
+          if ! denials="$(jq -rs 'flatten | map(select(.type == "result")) | last
+                                 | .permission_denials // [] | .[]
+                                 | "\(.tool_name) \(.tool_input | tojson | .[0:300])"
+                                 | gsub("#"; "\\u0023")' "$EXECUTION_FILE")"; then
+            echo "::warning title=claude-review::the denied tool calls could not be read from the execution file"
+            exit 0
+          fi
+          [ -n "$denials" ] || exit 0
+          n=$(printf '%s\n' "$denials" | wc -l)
+          printf '%s\n' "$denials" | sed 's/^/denied: /'
+          echo "::warning title=claude-review::$n tool call(s) denied; this step's log names each on a denied: line"
 
       # A failed round otherwise leaves nothing on the PR: no review, no comment,
       # and a ship run reads that as `degraded: silent`, indistinguishable from a
@@ -155,7 +201,8 @@ Both shared steps above, then:
 1. Merge the workflow to the default branch. A `pull_request` event runs the workflow from the PR's own merge ref, so the PR that adds this file is reviewed by it, unlike the fallback shape.
 2. Add the job to `## CI`'s `Legs:` in `docs/agents/ship.md`. It lands a check run on the PR head, and `Legs:` is where a run reads what that check proves.
 3. For `Gating: yes`: Settings > Branches (or Rules) > require the `review` check to pass before merging.
-4. Decide whether the `if: failure()` step stays. It costs one PR comment per failed round and nothing on a round that succeeds; dropping it is what restores the silent failure the bullet above describes.
+4. Read the first round's `Name the denied tool calls` step. No `claude-review` warning means no call was denied, and this step is done. Otherwise, for each `denied:` line, either widen `--allowedTools` to admit the call or record why it stays denied in a YAML comment above `claude_args:` (a `#` line inside the `claude_args` block reaches the CLI as an argument), so every denial has an owner from the first round on.
+5. Decide whether the `if: failure()` step stays. It costs one PR comment per failed round and nothing on a round that succeeds; dropping it is what restores the silent failure the bullet above describes.
 
 ### Profile block this produces
 
@@ -249,22 +296,40 @@ jobs:
 
             Report the round as ONE formal pull request review, submitted in a
             single call, with every inline finding attached to it. Build it as
-            one command beginning with `gh api`, the JSON arriving by heredoc:
+            one `gh api` command whose every field is a typed `-F` flag:
 
                 gh api --method POST \
                   repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}/reviews \
-                  --input - <<'JSON'
-                {"event": "COMMENT",
-                 "body": "<the round's text, or exactly `no findings`>",
-                 "comments": [{"path": "<file>", "line": <line in the new file>,
-                               "side": "RIGHT", "body": "<one finding>"}]}
-                JSON
+                  -F 'event=COMMENT' \
+                  -F 'body=<text of the round, or exactly no findings>' \
+                  -F 'comments[][path]=<file>' \
+                  -F 'comments[][line]=<line in the new file>' \
+                  -F 'comments[][side]=RIGHT' \
+                  -F 'comments[][body]=<one finding>'
 
-            No other shape of that call works. `--allowedTools` below grants
-            `Bash(gh api:*)`, which matches a command that starts with
-            `gh api` and nothing else. Piping from `echo` makes `echo` the
-            command, the call is refused, and a refused call is a round
-            that stops before the PR.
+            Repeat the four `comments[][...]` flags, in that order, once per
+            finding; each new `path` starts the next comment. Single-quote every
+            value, writing an apostrophe inside one as '\''. Four traps:
+
+            - Use `-F` for every field, never `-f`: gh sends every `-f` field
+              ahead of every `-F` one, so mixing them detaches a `line` from its
+              comment.
+            - A value starting with `@` is read as a file path, so open each
+              value with a word: `the @types/node bump ...`, not
+              `@types/node bump ...`.
+            - gh fills in `{owner}`, `{repo}` and `{branch}` anywhere in a value,
+              so a finding quoting code that contains one writes it without the
+              braces (`repos/OWNER/REPO/pulls`).
+            - A value of exactly `true`, `false`, `null` or an integer is sent as
+              that JSON type: that is what makes `line` an integer, and a `body`
+              that is only a number or one of those words needs a word added.
+
+            The `-F` flags are the whole call: one command that starts with
+            `gh api` and reads nothing from stdin. That is the shape both gates
+            admit: Claude Code's Bash check refuses a heredoc of JSON before
+            `--allowedTools` is read, and `Bash(gh api:*)` below matches only a
+            command that starts with `gh api`, so piping from `echo` is refused
+            too. A refused call is a round that stops before the PR.
 
             One entry in `comments` per finding tied to a line, each naming the
             rule or issue requirement broken and the concrete fix. A finding you
@@ -276,14 +341,40 @@ jobs:
             Submit exactly one review, even when you found nothing: a fallback
             reviewer that stays silent on a clean PR cannot be told apart from one
             that failed, and the run waits out its whole poll window either way.
-            With nothing actionable, send `body` of exactly `no findings` and an
-            empty `comments` list. Open `body` with the findings: the run reads
+            With nothing actionable, send `body` of exactly `no findings` and no
+            `comments` flags. Open `body` with the findings: the run reads
             its first 2000 characters, and a summary of the diff or praise ahead
             of them pushes them past that cut.
           claude_args: |
             --model opus
             --max-turns 60
             --allowedTools "Read,Grep,Glob,Bash(gh api:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(head:*),Bash(tail:*),Bash(wc:*)"
+
+      # The action logs `permission_denials_count` and hides which calls were
+      # refused, so a round that spent turns on denied calls looks clean. This
+      # names each one in the run log, which REST can read, and warns once with
+      # the count. The input is model-written and can quote PR text: the
+      # `denied: ` prefix keeps a line from starting a `::` command, and every
+      # `#` is written as its JSON escape because the runner also honours a
+      # `##[` command anywhere in a line.
+      - name: Name the denied tool calls
+        if: always() && steps.review.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          set -uo pipefail
+          [ -f "$EXECUTION_FILE" ] || exit 0
+          if ! denials="$(jq -rs 'flatten | map(select(.type == "result")) | last
+                                 | .permission_denials // [] | .[]
+                                 | "\(.tool_name) \(.tool_input | tojson | .[0:300])"
+                                 | gsub("#"; "\\u0023")' "$EXECUTION_FILE")"; then
+            echo "::warning title=claude-review::the denied tool calls could not be read from the execution file"
+            exit 0
+          fi
+          [ -n "$denials" ] || exit 0
+          n=$(printf '%s\n' "$denials" | wc -l)
+          printf '%s\n' "$denials" | sed 's/^/denied: /'
+          echo "::warning title=claude-review::$n tool call(s) denied; this step's log names each on a denied: line"
 
       # A failed round otherwise leaves nothing on the PR: no review, no comment.
       # Ship grades it from the run read either way: the profile block driving
@@ -317,7 +408,8 @@ Both shared steps above, then:
 1. **Merge the workflow to the default branch before expecting a round.** GitHub dispatches an `issue_comment` workflow from the default branch only, so this file reviews nothing while it is still on a branch: the PR that adds it cannot be reviewed by it, and the first round is on the next PR.
 2. Nothing to configure as a check or a policy. The job lands no check run on the PR head, so `## CI` names no leg for it and `No-checks legal:` is unaffected.
 3. Post `__PHRASE__` on an open PR by hand once, after the merge, and confirm one formal review comes back. That proves the secret, the permissions and the trigger phrase in one go, and it is the only proof before a degraded primary needs this reviewer for real.
-4. Decide who may spend the token. The `if:` above fires for any commenter, a drive-by on a public repo included. To narrow it, replace the whole `if:` with this one:
+4. Read that round's `Name the denied tool calls` step. No `claude-review` warning means no call was denied, and this step is done. Otherwise, for each `denied:` line, either widen `--allowedTools` to admit the call or record why it stays denied in a YAML comment above `claude_args:` (a `#` line inside the `claude_args` block reaches the CLI as an argument), so every denial has an owner from the first round on.
+5. Decide who may spend the token. The `if:` above fires for any commenter, a drive-by on a public repo included. To narrow it, replace the whole `if:` with this one:
 
    ```yaml
        if: >-
@@ -327,7 +419,7 @@ Both shared steps above, then:
    ```
 
    Weigh it first: whatever identity a ship run requests a round under must fall inside that list, and an unattended run whose identity does not gets no review. Ship grades that `never-queued` rather than reading the reviewer as silent, so the loss is named; naming it is not reviewing the PR, which on a quota month is what this reviewer was there for. A private repo where every commenter can already push needs no clause.
-5. Decide whether the `if: failure()` step stays. It costs one PR comment per failed round and nothing on a round that succeeds. Ship grades a failed round here `infra-error` from the run read either way, so dropping the step costs the link on the PR: the human then goes to the Actions tab to find the run themselves. A fallback exists to cover a degraded primary, so it is the last reviewer whose failures should send you there.
+6. Decide whether the `if: failure()` step stays. It costs one PR comment per failed round and nothing on a round that succeeds. Ship grades a failed round here `infra-error` from the run read either way, so dropping the step costs the link on the PR: the human then goes to the Actions tab to find the run themselves. A fallback exists to cover a degraded primary, so it is the last reviewer whose failures should send you there.
 
 ### Profile block this produces
 

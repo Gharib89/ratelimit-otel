@@ -7,6 +7,15 @@ released version. See
 
 <!-- version list -->
 
+## v8.5.3 (2026-09-24)
+
+### Refactoring
+
+- **ship**: The Azure DevOps adapter stops sending substantive
+  ([#276](https://github.com/Gharib89/skills/pull/276),
+  [`cd993fb`](https://github.com/Gharib89/skills/commit/cd993fbf93dfda05cb79b46797b217edb0616b84))
+
+
 ## v8.5.2 (2026-09-24)
 
 ### Documentation

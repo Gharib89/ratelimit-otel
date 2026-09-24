@@ -54,6 +54,25 @@ steps:
     ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)   # secret variables reach scripts only through an explicit env mapping
 
 - bash: |
+    set -uo pipefail
+    R="$(Build.ArtifactStagingDirectory)/result.json"
+    [ -f "$R" ] || exit 0
+    # Model-written input: `#` goes out as its JSON escape, because the agent
+    # honours a `##vso[` command anywhere in a line.
+    if ! denials="$(jq -r '.permission_denials // [] | .[]
+                          | "\(.tool_name) \(.tool_input | tojson | .[0:300])"
+                          | gsub("#"; "\\u0023")' "$R")"; then
+      echo "##vso[task.logissue type=warning]the denied tool calls could not be read from result.json"
+      exit 0
+    fi
+    [ -n "$denials" ] || exit 0
+    n=$(printf '%s\n' "$denials" | wc -l)
+    printf '%s\n' "$denials" | sed 's/^/denied: /'
+    echo "##vso[task.logissue type=warning]$n tool call(s) denied; this step's log names each on a denied: line"
+  displayName: Name the denied tool calls
+  condition: and(always(), eq(variables['Build.Reason'], 'PullRequest'))
+
+- bash: |
     set -euo pipefail
     F="$(Build.ArtifactStagingDirectory)/findings.json"
     URL="$(System.CollectionUri)$(System.TeamProjectId)/_apis/git/repositories/$(Build.Repository.ID)/pullRequests/$(System.PullRequest.PullRequestId)/threads?api-version=7.1"
@@ -119,7 +138,9 @@ A skill-install PR runs to dozens of files once the derived copies are in it, an
 
 `Speak when the round failed` is what keeps a dead round distinguishable. Claude failing before a verdict posts no thread and fails the build, so a ship run polling the PR reads `degraded: silent` and cannot tell it from a reviewer that did not fire, the indistinguishability [ADR 0002](https://github.com/Gharib89/skills/blob/main/docs/adr/0002-fallback-reviewer-is-on-request-and-conditional.md) exists to prevent; the first-run note above is that case. It costs one closed thread per failed round and nothing on a round that succeeds, the `critical` finding included: that one fails the build by design, and the `posted.ok` marker the posting step leaves behind its loop is what keeps the last step quiet. The marker and not the verdict, because Claude can return `success` and the posting loop still die on a 403 or a malformed findings file, and that round is as silent as one that reviewed nothing. Dropping the step restores the silent failure. It needs no permission the job did not already have: the same threads endpoint under the same `System.AccessToken` the post-findings step uses. The `tee` in the review step is what feeds it, keeping Claude's raw result on disk for the `subtype` while `jq` still reads the structured output off the same stream and `pipefail` still fails the step when Claude does. `succeeded()` on the post-findings step is what keeps the two from both firing: a bare `condition:` replaces the implicit `succeeded()` rather than adding to it, so without it a failed round runs the posting loop against a findings file no step wrote. The review step keeps its bare condition: a failed install leaves no verdict either way, which is a round the last step is right to report.
 
-Known gaps, to settle on the first real run. The failure-speaking step is unverified: no run in the source repo can execute an Azure Pipelines step, so its condition, its `subtype` read and its thread POST are proven only by the first failed round on a real pipeline. The other gap is older: the threads API documents `pullRequestThreadContext.changeTrackingId` as required for line anchoring on PRs with iterations. If threads land at PR level instead of on the line, look the id up from the PR iterations API and add it to the body.
+`Name the denied tool calls` is what makes a refusal visible. The result JSON lists a round's `permission_denials` and nothing prints them, so a round that spent its turns on denied calls reads as clean. The step reads the same `result.json` the `tee` keeps, prints one `denied: <tool> <truncated input>` line per denial, and raises one `logissue` warning with the count; at zero it prints nothing, and a file it cannot read raises a warning saying so. `always()` runs it after a round that failed too, since a round that died on refusals is the one most worth naming. The heredoc refusal the GitHub prompt works around does not arise here: a script posts the findings and the model makes no POST call.
+
+Known gaps, to settle on the first real run. The failure-speaking step is unverified: no run in the source repo can execute an Azure Pipelines step, so its condition, its `subtype` read and its thread POST are proven only by the first failed round on a real pipeline. The denial step shares that gap for its `always()` condition and its `logissue` warning; its `jq` read is the GitHub step's without the slurp-and-select, because `--output-format json` writes a single result object where the action writes a stream. The other gap is older: the threads API documents `pullRequestThreadContext.changeTrackingId` as required for line anchoring on PRs with iterations. If threads land at PR level instead of on the line, look the id up from the PR iterations API and add it to the body.
 
 ## Human checklist
 
@@ -136,6 +157,7 @@ Known gaps, to settle on the first real run. The failure-speaking step is unveri
      --manual-queue-only false --queue-on-source-update-only true --valid-duration 0
    ```
    `--blocking true` is what makes the reviewer gating; `false` gives `Gating: no`.
+5. Read the first round's `Name the denied tool calls` step. No warning there means no call was denied, and this step is done. Otherwise, for each `denied:` line, either widen `--allowedTools` to admit the call or record why it stays denied in a comment line above `claude --bare -p` (a `#` after a `\` continuation ends the command), so every denial has an owner from the first round on.
 
 ## Profile block this produces
 
