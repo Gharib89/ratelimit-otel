@@ -61,11 +61,15 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
 
   // A CLAUDE_CODE_OAUTH_TOKEN session writes no `oauthAccount`, and on CI the
   // file is absent altogether: both fall through to the ladder's later rungs.
-  const home = await $.env.get("HOME");
+  // The directory is resolved the way Claude Code resolves it,
+  // `CLAUDE_CONFIG_DIR || os.homedir()`, and Windows sets no HOME, so
+  // `USERPROFILE` stands in for the home directory there.
+  const configDir =
+    (await $.env.get("CLAUDE_CONFIG_DIR")) || (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
   let claudeJson: unknown = undefined;
-  if (home !== undefined) {
+  if (configDir) {
     claudeJson = await $.fs
-      .read(`${home}/.claude.json`)
+      .read(`${configDir}/.claude.json`)
       .then((text) => JSON.parse(text) as unknown)
       .catch(() => undefined);
   }

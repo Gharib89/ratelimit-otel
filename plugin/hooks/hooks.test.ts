@@ -27,7 +27,7 @@ function world(
     /** Read on every sample, so a test can move to a second session mid-run. */
     sessionId?: () => string;
     /** Answers `$.fs.read`; throwing it is how an unreadable `~/.claude.json` is expressed. */
-    readClaudeJson?: () => string;
+    readClaudeJson?: (path: string) => string;
   } = {},
 ) {
   const clock = mock.clock(on, { now: NOW });
@@ -51,8 +51,8 @@ function world(
     value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: options.rateLimits?.() ?? [FIVE_HOUR] },
   }));
   on("session.id", () => ({ value: options.sessionId?.() ?? "sess-1" }));
-  on("fs.read", () => ({
-    value: options.readClaudeJson?.() ?? JSON.stringify(options.claudeJson ?? {}),
+  on("fs.read", (_$, e) => ({
+    value: options.readClaudeJson?.(e.path) ?? JSON.stringify(options.claudeJson ?? {}),
   }));
   on("ui.log", () => ({ value: undefined }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
@@ -308,6 +308,40 @@ test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs",
     { key: "user.email", value: { stringValue: "env@example.com" } },
     { key: "session.id", value: { stringValue: "sess-1" } },
   ]);
+});
+
+/**
+ * Answers only the one path Claude Code keeps its global config at. POSIX-shaped
+ * even for a Windows seat: the test engine resolves a drive-letter path as
+ * relative, and what these cases pin is which variable wins, not path syntax.
+ */
+const claudeJsonAt = (expected: string) => (path: string) => {
+  if (path !== expected) throw new Error(`ENOENT: ${path}`);
+  return JSON.stringify({ oauthAccount: { emailAddress: "dev@example.com", accountUuid: "acct-1" } });
+};
+
+test("a Windows seat with no HOME reads .claude.json from USERPROFILE", async ($, on) => {
+  const { clock, posts } = world(on, {
+    env: { USERPROFILE: "/users/dev", OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT },
+    readClaudeJson: claudeJsonAt("/users/dev/.claude.json"),
+  });
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(resourceKeys(posts[0])).toEqual(["service.name", "user.email", "user.account_id", "session.id"]);
+});
+
+test("CLAUDE_CONFIG_DIR outranks HOME, as it does for Claude Code itself", async ($, on) => {
+  const { clock, posts } = world(on, {
+    env: { CLAUDE_CONFIG_DIR: "/d/claude", HOME: "/home/dev", OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT },
+    readClaudeJson: claudeJsonAt("/d/claude/.claude.json"),
+  });
+
+  await $.session.measure(aMeasure);
+  await clock.settle();
+
+  expect(resourceKeys(posts[0])).toEqual(["service.name", "user.email", "user.account_id", "session.id"]);
 });
 
 test("a session ending with nothing delivered yet takes a sample", async ($, on) => {
