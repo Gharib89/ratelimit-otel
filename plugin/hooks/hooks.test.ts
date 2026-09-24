@@ -26,7 +26,7 @@ function world(
     respond?: () => Response | Promise<Response>;
     /** Read on every sample, so a test can move to a second session mid-run. */
     sessionId?: () => string;
-    /** Answers `$.fs.read`; throwing it is how an unreadable `~/.claude.json` is expressed. */
+    /** Answers `$.fs.read`; throwing it is how an unreadable `.claude.json` is expressed. */
     readClaudeJson?: (path: string) => string;
   } = {},
 ) {
@@ -288,7 +288,7 @@ test("each session delivers its own first reading, account attributes included",
   expect(resourceKeys(posts[1])).toContain("seat.tier");
 });
 
-test("no HOME and an unreadable ~/.claude.json still emit, off the later rungs", async ($, on) => {
+test("no config directory and an unreadable .claude.json still emit, off the later rungs", async ($, on) => {
   const { clock, posts } = world(on, {
     env: {
       OTEL_EXPORTER_OTLP_ENDPOINT: ENDPOINT,

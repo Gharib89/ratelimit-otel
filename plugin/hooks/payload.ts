@@ -46,7 +46,7 @@ function parseKeyValueList(value: string | undefined): Record<string, string> {
   return pairs;
 }
 
-/** `~/.claude.json`'s `oauthAccount`, the object rung 1 and the account attributes both read. */
+/** `.claude.json`'s `oauthAccount`, the object rung 1 and the account attributes both read. */
 const oauthAccountOf = (claudeJson: unknown): unknown =>
   (claudeJson as Record<string, unknown> | undefined)?.["oauthAccount"];
 
@@ -57,7 +57,7 @@ const stringField = (source: unknown, field: string): string | undefined => {
 
 /** What the ladder reads, named rather than positional: the three sources are otherwise transposable. */
 export type IdentitySources = {
-  /** The parsed `~/.claude.json`, or `undefined` when unreadable. */
+  /** The parsed `.claude.json`, or `undefined` when unreadable. */
   claudeJson: unknown;
   /** The `OTEL_RESOURCE_ATTRIBUTES` value. */
   resourceAttributes: string | undefined;
@@ -69,7 +69,7 @@ export type IdentitySources = {
 
 /**
  * ADR-0003's identity ladder, first hit wins, over the three sources a hook
- * reads for it. The account uuid is carried whenever `~/.claude.json` has one,
+ * reads for it. The account uuid is carried whenever `.claude.json` has one,
  * independently of the ladder, since it is a resource attribute of its own
  * (ADR-0001) and the two later rungs cannot supply it.
  */
@@ -93,7 +93,7 @@ type AttributeValue = { stringValue: string } | { boolValue: boolean };
 export type Attribute = { key: string; value: AttributeValue };
 
 /**
- * ADR-0001's account attributes, in its order, from `~/.claude.json`'s
+ * ADR-0001's account attributes, in its order, from `.claude.json`'s
  * `oauthAccount`: the emitted key, the field it is read from, and how the value
  * crosses. The fields ADR-0001 excludes (`displayName`, `fullName`,
  * `accountCreatedAt`, `ccOnboardingFlags`, the trial pair) are absent from this
@@ -112,7 +112,7 @@ const ACCOUNT_ATTRIBUTES: { key: string; field: string; as: "string" | "bool" | 
 ];
 
 /**
- * Reads ADR-0001's account attributes off the parsed `~/.claude.json`, or
+ * Reads ADR-0001's account attributes off the parsed `.claude.json`, or
  * `undefined` where it carries no `oauthAccount` (a `CLAUDE_CODE_OAUTH_TOKEN`
  * session never writes one). A field the account does not carry is omitted.
  */

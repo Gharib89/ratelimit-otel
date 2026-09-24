@@ -138,4 +138,6 @@ same sessions' `raw.events` carried the email.
   CLI binary; one of the two seats keeps its config on another drive this way.
 
 Rung 1 therefore resolves the directory the same way, `CLAUDE_CONFIG_DIR`, then
-`HOME`, then `USERPROFILE`, and reads `.claude.json` there.
+`HOME`, then `USERPROFILE`, and reads `.claude.json` there. That is also how the
+wrapper locates it (`CLAUDE_CONFIG_DIR`, else `os.homedir()`), so the Decision's
+"same ladder the wrapper has" holds again.
