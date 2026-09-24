@@ -1,6 +1,6 @@
 # ADR-0003: Sample every session, including CI, and fall back for identity
 
-Status: accepted, 2026-09-21; amended 2026-09-21 and 2026-09-22 (see the Amendments)
+Status: accepted, 2026-09-21; amended 2026-09-21, 2026-09-22 and 2026-09-24 (see the Amendments)
 Resolves: CONTEXT.md open decision 3 (whether to sample on CI and cloud sessions)
 Superseded in part: its sampling triggers and delivery floor, and the 2026-09-22 amendment's floor waiver, by [ADR-0005](0005-deliver-on-movement.md). Sampling every session and the identity ladder stand.
 
@@ -16,7 +16,7 @@ Sample in every session. Emit with no email rather than not emitting.
 
 Identity is read in this order, first hit wins, the same ladder the wrapper has at `installer/cc-otel-wrapper.mjs:112`:
 
-1. `~/.claude.json`, `oauthAccount.emailAddress` (lowercased) and `oauthAccount.accountUuid`
+1. `.claude.json`, `oauthAccount.emailAddress` (lowercased) and `oauthAccount.accountUuid`, read from the directory Claude Code keeps it in: `CLAUDE_CONFIG_DIR`, else `HOME`, else `USERPROFILE` (see the 2026-09-24 amendment)
 2. `user.email=` parsed out of `$.env.get("OTEL_RESOURCE_ATTRIBUTES")`
 3. `$.env.get("CLAUDE_USER_EMAIL")`
 
@@ -123,3 +123,19 @@ Every session exit now carries one POST, bounded by the engine's 1.5 s
 
 `kill -9` raises nothing and leaves the tail open. There is nothing in the plugin
 to change: the process is gone before any hook is bound.
+
+## Amendment, 2026-09-24: rung 1 reads the file where Claude Code keeps it
+
+The ladder does not change. Where rung 1 looks does. It read `$HOME/.claude.json`
+alone, which misses on two kinds of seat, measured in prod `raw.metrics` on the
+first two Windows seats of the release-archive rollout: every plugin row from both
+landed with `user_email`, `user_account_id` and `organization_id` null, while the
+same sessions' `raw.events` carried the email.
+
+- **Windows sets no `HOME`.** Node's home directory there is `USERPROFILE`.
+- **`CLAUDE_CONFIG_DIR` moves the file.** Claude Code 2.1.281 resolves its global
+  config as `join(CLAUDE_CONFIG_DIR || os.homedir(), ".claude.json")`, read off the
+  CLI binary; one of the two seats keeps its config on another drive this way.
+
+Rung 1 therefore resolves the directory the same way, `CLAUDE_CONFIG_DIR`, then
+`HOME`, then `USERPROFILE`, and reads `.claude.json` there.
