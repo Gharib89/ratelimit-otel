@@ -8,8 +8,8 @@
 #
 # stdout: {pr, thread, replied, url}; a failure adds `status`, the host's
 #         status for the failed post, and `detail` where the adapter named one
-# exit: 0 replied · 1 not replied (a thread the host cannot reach, or thread
-#       state unavailable, which is the reviewer's degraded `unreachable`) · 2 usage
+# exit: 0 replied · 1 not replied (a thread the host cannot reach, detail
+#       "unavailable", or an id no thread carries, detail "no such thread") · 2 usage
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: reply-thread <pr> <thread-id> --body-file <path>'

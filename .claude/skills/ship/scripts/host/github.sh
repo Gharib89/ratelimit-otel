@@ -2,11 +2,12 @@
 # GitHub adapter: the host_* interface from _lib.sh over REST via `gh api`.
 # REST throughout, retried by the policy on `api` below: gh's GraphQL paths
 # (gh pr view --json, gh pr checks --watch) flake 401 mid-session. GraphQL is
-# used only for the three things REST lacks, review-thread resolution state,
-# resolveReviewThread, and a thread id's reply target (REST offers no route from
-# a thread to its first comment), and those keep the flat one retry after 2 s
-# that every REST call had before #173. Sourced by _lib.sh's ship_load_host;
-# needs SHIP_OWNER and SHIP_REPO set.
+# used only for the two things REST lacks, review-thread resolution state and
+# resolveReviewThread, and those keep the flat one retry after 2 s that every
+# REST call had before #173. Where a proxy refuses GraphQL outright (the Claude
+# cloud sandbox's does), those two answer through the routes its refusal names
+# instead; see `gql`. Sourced by _lib.sh's ship_load_host; needs SHIP_OWNER and
+# SHIP_REPO set.
 
 R="repos/$SHIP_OWNER/$SHIP_REPO"
 
@@ -140,7 +141,44 @@ api() {
     sleep "$wait"
   done
 }
-gql() { gh api graphql "$@" 2>/dev/null || { sleep 2; gh api graphql "$@"; }; }
+# GraphQL, telling one refusal apart from a flake. The Claude cloud sandbox's
+# session proxy answers every GraphQL call with a 403 whose message names the
+# REST routes it serves in its place, review threads among them
+# (`GET .../pulls/{n}/ccr/review_threads`); gh prints that message on stderr. On
+# that answer, from either attempt, `gql` returns 3, which the thread functions
+# below read as "take the REST path", and says so once on stderr. The refusal is
+# remembered for the rest of the process, so a polling mechanic pays for one
+# refused call rather than one per poll. The callers run in command
+# substitutions, whose subshells lose a variable, so the memory is a marker
+# directory named for this user and this process's pid ($$ is the parent's in
+# every subshell); `mkdir` creates it without following a link planted at that
+# path, and only a real directory this user owns counts as the marker, since the
+# name is predictable and a shared /tmp lets another user plant one. It is
+# made only where the proxy refused, which is a disposable sandbox, so it is
+# left there rather than cleaned up by a trap that would replace the
+# mechanic's own.
+# Switching on the host's answer rather than on the environment keeps the
+# sandbox out of the adapter's logic, and a run outside it never meets the
+# refusal, so it never makes a `ccr` call.
+_gh_gql_marker() { printf '%s/ship-gh-graphql-refused.%s.%s' "${TMPDIR:-/tmp}" "${UID:-0}" "$$"; }
+gql() {
+  local err rc attempt m
+  m=$(_gh_gql_marker)
+  [ -d "$m" ] && [ ! -L "$m" ] && [ -O "$m" ] && return 3
+  for attempt in 1 2; do
+    # stderr into $err, stdout on to the caller, through fd 3.
+    { err=$(gh api graphql "$@" 2>&1 1>&3 3>&-); rc=$?; } 3>&1
+    [ "$rc" -eq 0 ] && return 0
+    case $err in *ccr/review_threads*)
+      mkdir "$m" 2>/dev/null
+      echo "GraphQL refused by the session proxy; review threads go through its REST routes" >&2
+      return 3 ;;
+    esac
+    [ "$attempt" -eq 1 ] && sleep 2
+  done
+  printf '%s\n' "$err" | tail -n 40 >&2
+  return "$rc"
+}
 
 host_tooling_reasons() {
   command -v gh  >/dev/null || echo "gh not installed"
@@ -202,6 +240,10 @@ host_copilot_review_on_push() {
 # trigger rather than the brand. An adapter with no Copilot prints nothing,
 # which is what makes the check skip rather than branch on the host name.
 host_copilot_login() { printf 'copilot-pull-request-reviewer[bot]\n'; }
+# The name GitHub records that login under, on `requested_reviewers` and the
+# timeline alike. A different name, not the login less its `[bot]` suffix, so
+# `host_pr_request_review` matches it by alias rather than by suffix (#239).
+_gh_copilot_recorded=Copilot
 
 _norm_issue='{number, title, body: (.body // ""),
   state: (if .state == "open" then "open" else "closed" end),
@@ -380,17 +422,13 @@ host_pr_checks() { # <pr> <head_sha>
 
 # `on_head` is keyed to the current head (a review on an older commit does not
 # count), which poll-pr's default head rule reads; `all` carries every round
-# across heads, for its --since rule. `substantive` is the landing signal, and
-# two kinds of row fail it: a reviewer's reply to one thread, which posts as a
-# review row of its own (current head, empty body), and a quota or rate-limit
-# notice, which posts as a review with a non-empty body (PR #154, three times)
-# and refuses the round rather than delivering it. Counting either lands round 2
-# off round 1. Both stay in the two lists with their bodies, so the run can see
-# what it is waiting on.
-_gh_reviews_projection="$SHIP_REVIEW_CLIP$SHIP_BLOCKED_NOTICE"'
+# across heads, for its --since rule. Every review stays in the two lists with
+# its body, a reviewer's reply to one thread and a quota notice included, so the
+# run can see what it is waiting on; which of them is a round is
+# `SHIP_SUBSTANTIVE`'s grade, applied in poll-pr.
+_gh_reviews_projection="$SHIP_REVIEW_CLIP"'
     def row: . as $r | {id: (.id | tostring), login: .user.login,
       state: (if .state == "APPROVED" then "approved" elif .state == "CHANGES_REQUESTED" then "changes" else "comment" end),
-      substantive: ((.body // "") != "" and ((.body // "") | is_notice | not)),
       submitted_at, body: ((.body // "") | clip($r.id))};
     {on_head: [.[] | select(.commit_id == $sha) | row], all: [.[] | row], total: length}'
 host_pr_reviews() { # <pr> <head_sha> [<full-ids-json>]
@@ -405,23 +443,57 @@ _threads_query='query($o:String!,$r:String!,$n:Int!,$after:String){
       nodes{ id isResolved isOutdated path
         comments(first:1){ nodes{ databaseId author{login} body url } }
         mine: comments(last:100){ nodes{ viewerDidAuthor } } } } } } }'
-# GraphQL only: REST has no thread-resolution state. A refused GraphQL path
-# (a proxy that pins it) fails this call; the mechanic reports "unavailable".
-host_pr_threads() {
-  local after=null page out='[]'
+# A thread's id, on both paths, is its root review comment's REST id as a
+# string: the id the reply route posts to and the `ccr` routes key on; REST
+# routes take it, where they cannot take GraphQL's node id. On this path a
+# thread whose root was deleted takes its next comment's id. The GraphQL rows
+# also carry `node`, the thread's node id, which resolveReviewThread needs and
+# host_pr_threads drops.
+# Returns 3 where GraphQL was refused (see `gql`), 1 on any other failure.
+_gh_threads_gql() { # <pr>
+  local after=null page out='[]' rc
   while :; do
     # shellcheck disable=SC2046  # deliberate: the optional `-F after=<cursor>` pair must split
     page=$(gql -f query="$_threads_query" -F o="$SHIP_OWNER" -F r="$SHIP_REPO" -F n="$1" \
       $([ "$after" != null ] && printf -- '-F after=%s' "$after") \
-      --jq '.data.repository.pullRequest.reviewThreads') || return 1
-    out=$(jq --argjson p "$page" '. + [$p.nodes[] | {id, comment_id: .comments.nodes[0].databaseId,
+      --jq '.data.repository.pullRequest.reviewThreads'); rc=$?
+    [ "$rc" -eq 0 ] || { [ "$rc" -eq 3 ] && return 3; return 1; }
+    out=$(jq --argjson p "$page" '. + [$p.nodes[] | select(.comments.nodes[0] != null)
+      | {id: (.comments.nodes[0].databaseId | tostring), comment_id: .comments.nodes[0].databaseId,
       resolved: .isResolved, outdated: .isOutdated, path,
       replied: ([.mine.nodes[] | select(.viewerDidAuthor)] | length > 0),
-      author: .comments.nodes[0].author.login, body: .comments.nodes[0].body, url: .comments.nodes[0].url}]' <<<"$out")
+      author: .comments.nodes[0].author.login, body: .comments.nodes[0].body, url: .comments.nodes[0].url,
+      node: .id}]' <<<"$out")
     [ "$(jq -r .pageInfo.hasNextPage <<<"$page")" = true ] || break
     after=$(jq -r .pageInfo.endCursor <<<"$page")
   done
   printf '%s\n' "$out"
+}
+# The REST path, taken when the proxy refuses GraphQL: the proxy's thread list
+# carries each thread's state, path and `comment_ids` but no body or author, so
+# the PR's review comments, joined on id, supply the rest. `author` is the REST
+# login, which keeps a bot's `[bot]` suffix where GraphQL drops it.
+_gh_threads_ccr() { # <pr>
+  local threads comments me
+  threads=$(api "$R/pulls/$1/ccr/review_threads" --paginate --jq '.[]' | jq -s .) || return 1
+  comments=$(api "$R/pulls/$1/comments?per_page=100" --paginate \
+    --jq '.[] | {id, login: .user.login, body, url: .html_url}' | jq -s .) || return 1
+  me=$(host_identity) || return 1
+  jq -n --argjson t "$threads" --argjson c "$comments" --arg me "$me" '
+    (reduce $c[] as $x ({}; .[$x.id | tostring] = $x)) as $by
+    | [$t[] | select((.comment_ids | length) > 0) | ($by[.comment_ids[0] | tostring] // {}) as $root
+       | {id: (.comment_ids[0] | tostring), comment_id: .comment_ids[0], resolved, outdated, path,
+          replied: any(.comment_ids[]; $by[tostring].login == $me),
+          author: $root.login, body: $root.body, url: $root.url}]'
+}
+host_pr_threads() {
+  local out rc
+  out=$(_gh_threads_gql "$1"); rc=$?
+  case $rc in
+    0) jq 'map(del(.node))' <<<"$out" ;;
+    3) _gh_threads_ccr "$1" ;;
+    *) return 1 ;;
+  esac
 }
 
 # The awaited login's own account of a round it has not delivered. A reviewer
@@ -430,9 +502,12 @@ host_pr_threads() {
 # list and the latest notice wins whichever way it arrived.
 # The login is compared the way `SHIP_LANDED_BY` compares it, so a `Login:` typed
 # in another case cannot land rounds here and report blocked nowhere.
+# The notice carries the time its row was posted, which is what poll-pr's since
+# rule reads for a comment (#256).
 _gh_blocked_select="$SHIP_BLOCKED_NOTICE"'
   def norm: ascii_downcase | sub("\\[bot\\]$"; "");
-  [sort_by(.at)[] | select((.login | norm) == ($l | norm)) | (.body // "") | notice_lines]
+  [sort_by(.at)[] | select((.login | norm) == ($l | norm)) | .at as $at
+   | (.body // "") | notice_lines | {line: ., at: $at}]
   | last // null'
 host_pr_reviewer_blocked() { # <pr> <login>
   { api "$R/issues/$1/comments" --paginate --jq '.[] | {login: .user.login, body, at: .created_at}'
@@ -470,26 +545,31 @@ _gh_run_list() { # <workflow-file> <since-iso>
     --json status,conclusion,createdAt,url,displayTitle \
     --jq 'map({status, conclusion, created_at: .createdAt, url, title: .displayTitle})'
 }
+# GitHub knows a workflow by its file name, and answers the repo-relative path
+# the profile's `Workflow:` carries with a 404; every workflow sits flat in
+# `.github/workflows/`, so the name alone is unambiguous.
 host_workflow_runs() { # <workflow-file> <since-iso>
-  local err rc
+  local err rc wf=${1##*/}
   err=$(mktemp) || return 2
   trap 'rm -f "$err"' RETURN
-  _gh_run_list "$1" "$2" 2>"$err"; rc=$?
+  _gh_run_list "$wf" "$2" 2>"$err"; rc=$?
   # The flat one retry `gql` keeps rather than `api`'s backoff: a read that
   # answers non-zero reports the reviewer unreachable, and this CLI family is the
   # one the header names as flaking 401 mid-session, so a bad second would
   # otherwise be read as evidence about a reviewer that is working.
-  if [ "$rc" -ne 0 ]; then sleep 2; : > "$err"; _gh_run_list "$1" "$2" 2>"$err"; rc=$?; fi
+  if [ "$rc" -ne 0 ]; then sleep 2; : > "$err"; _gh_run_list "$wf" "$2" 2>"$err"; rc=$?; fi
   [ "$rc" -eq 0 ] || ship_tail40 "$err"
   return $rc
 }
 
 # Request, then read the request back off the host's own record: the login you
 # request and the login you read back can differ (Copilot is requested as
-# copilot-pull-request-reviewer[bot] and recorded on the timeline as `Copilot`),
+# copilot-pull-request-reviewer[bot] and recorded as `Copilot`, the
+# `_gh_copilot_recorded` alias above),
 # and an empty requested_reviewers list proves nothing once the bot has posted.
 host_pr_request_review() { # <pr> <login>
-  local pr=$1 login=$2 ok=false before after readback now
+  local pr=$1 login=$2 ok=false before after pending readback now alias=
+  [ "$login" = "$(host_copilot_login)" ] && alias=$_gh_copilot_recorded
   _requested_events() {
     api "$R/issues/$pr/timeline" --paginate \
       --jq '.[] | select(.event == "review_requested") | select(.requested_reviewer.login) | {login: .requested_reviewer.login, created_at}' \
@@ -502,14 +582,26 @@ host_pr_request_review() { # <pr> <login>
   api -X POST "$R/pulls/$pr/requested_reviewers" -f "reviewers[]=$login" >/dev/null && ok=true
   sleep 2
   after=$(_requested_events) || after='[]'
-  readback=$( { api "$R/pulls/$pr" --jq '.requested_reviewers[].login'; jq -r '.[].login' <<<"$after"; } | jq -R . | jq -s 'unique')
-  # Read back by delta: the request landed iff the timeline gained a
-  # review_requested event during this call. Comparing logins does not work for
-  # an app reviewer, which is requested under one login and recorded under another.
-  # The timeline is chronological, so that new event is the last one.
-  jq -n --argjson ok "$ok" --argjson b "$before" --argjson a "$after" --argjson rb "$readback" --arg l "$login" --arg now "$now" \
-    '{requested: ($ok and (($a | length) > ($b | length)
-                          or ([$rb[] | ascii_downcase | sub("\\[bot\\]$"; "")] | index($l | ascii_downcase | sub("\\[bot\\]$"; "")) != null))),
+  pending=$(api "$R/pulls/$pr" --jq '.requested_reviewers[].login' | jq -R . | jq -s .)
+  readback=$( { jq -r '.[]' <<<"$pending"; jq -r '.[].login' <<<"$after"; } | jq -R . | jq -s 'unique')
+  # The request landed if the timeline gained a review_requested event during
+  # this call, or if the reviewer is pending on `requested_reviewers` now under
+  # any name it is recorded as: its login less a `[bot]` suffix
+  # (github-actions[bot] reads back as github-actions), or its alias (Copilot).
+  # The timeline can lag the wait above, so the pending list alone must be
+  # enough, or a landed request reads as never-queued. The match reads the
+  # pending list and not the timeline's logins, which keep every earlier
+  # request on the PR: matched against those, a second request that queued
+  # nothing would read as landed. The pending list drops a reviewer once it
+  # submits, so a reviewer still on it has a round queued and unposted, which
+  # lands after this call's `requested_at` and is what the caller waits for:
+  # already pending counts as landed. The timeline is chronological, so a new
+  # event is the last one.
+  jq -n --argjson ok "$ok" --argjson b "$before" --argjson a "$after" --argjson p "$pending" --argjson rb "$readback" --arg l "$login" --arg alias "$alias" --arg now "$now" \
+    'def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+     [$l, $alias | select(. != "") | norm] as $names
+     | {requested: ($ok and (($a | length) > ($b | length)
+                          or any($p[] | norm; . as $r | $names | index($r) != null))),
       readback: $rb,
       requested_at: (if ($a | length) > ($b | length) then ($a[-1].created_at // $now) else $now end)}'
 }
@@ -529,28 +621,24 @@ host_pr_comment() { # <pr> <body-file>
 host_pr_set_body() { jq -n --rawfile b "$2" '{body: $b}' | _gh_write -X PATCH "$R/pulls/$1" --input -; }
 host_pr_set_title() { jq -n --arg t "$2" '{title: $t}' | _gh_write -X PATCH "$R/pulls/$1" --input -; }
 
-_thread_reply_target_query='query($id:ID!){ node(id:$id){
-  ... on PullRequestReviewThread { comments(first:1){ nodes{ databaseId } } } } }'
-# REST, per this adapter's rule: a reply is `POST .../comments/{id}/replies`
-# keyed by the thread's first comment, which the thread row carries as
-# `comment_id`, so nothing here needs a GraphQL mutation. The thread ids
-# themselves come from GraphQL, so where the proxy blocks it there are no ids
-# to reply to and `poll-pr` already reports `threads: "unavailable"`.
-#
-# The caller passes the thread id, the one id both reply-thread and
-# resolve-thread take on either host, and this resolves that thread's
-# comment_id for it: one targeted node read, not a walk of every thread on the
-# PR, because phase 7 replies once per thread.
+# REST whichever path the threads came from: a reply is
+# `POST .../comments/{id}/replies` keyed by the thread's root comment, and that
+# id is the thread id itself, so no GraphQL read stands between the caller and
+# the post. The id is checked against the PR's review comments first, so an id
+# no comment carries (a GraphQL node id from an older ship included) answers
+# `no such thread` rather than a failed post. A reply's own id passes that
+# check and the host answers the post, with its status: the check names unknown
+# ids, it does not rank them.
 #
 # Create-then-verify like every other create here, with a find that returns
 # non-zero when the comment read fails, so a read that failed is reported rather
 # than turned into a duplicate disposition in the thread.
-host_pr_reply_thread() { # <pr> <thread-node-id> <body-file>
-  local pr=$1 file=$3 cid me
-  cid=$(gql -f query="$_thread_reply_target_query" -F id="$2" \
-    --jq '.data.node.comments.nodes[0].databaseId') \
+host_pr_reply_thread() { # <pr> <thread-id> <body-file>
+  local pr=$1 cid=$2 file=$3 me ids
+  case $cid in ''|*[!0-9]*) printf '{"replied": false, "url": null, "detail": "no such thread"}\n'; return 1 ;; esac
+  ids=$(api "$R/pulls/$pr/comments?per_page=100" --paginate --jq '.[].id') \
     || { printf '{"replied": false, "url": null, "detail": "unavailable"}\n'; return 1; }
-  [ -n "$cid" ] && [ "$cid" != null ] || { printf '{"replied": false, "url": null, "detail": "no such thread"}\n'; return 1; }
+  grep -qx "$cid" <<<"$ids" || { printf '{"replied": false, "url": null, "detail": "no such thread"}\n'; return 1; }
   me=$(host_identity) || { [ -n "$me" ] && printf '%s\n' "$me"; return 1; }
   _reply_post() { jq -n --rawfile b "$file" '{body: $b}' \
     | _gh_create -X POST "$R/pulls/$pr/comments/$cid/replies" --input - --jq '{replied: true, url: .html_url}'; }
@@ -563,9 +651,26 @@ host_pr_reply_thread() { # <pr> <thread-node-id> <body-file>
   _gh_create_verify _reply_post _reply_find
 }
 
-host_pr_resolve_thread() { # <pr> <thread-node-id>
-  gql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' \
-    -F id="$2" --jq '{resolved: .data.resolveReviewThread.thread.isResolved}'
+# The thread id is a root comment id, so the GraphQL path finds the thread
+# carrying it to get the node id resolveReviewThread takes: a walk of the PR's
+# threads, one GraphQL page per hundred threads. Where GraphQL was refused, the
+# proxy's own route takes the comment id directly, is idempotent, and answers
+# 404 for an id no thread on the PR contains. Either way an unknown id prints
+# {resolved: false, detail: "no such thread"} and returns 1.
+host_pr_resolve_thread() { # <pr> <thread-id>
+  local rows node rc nosuch='{"resolved": false, "detail": "no such thread"}'
+  case $2 in ''|*[!0-9]*) printf '%s\n' "$nosuch"; return 1 ;; esac
+  rows=$(_gh_threads_gql "$1"); rc=$?
+  case $rc in
+    0) node=$(jq -r --arg id "$2" 'first(.[] | select(.id == $id) | .node) // empty' <<<"$rows")
+       [ -n "$node" ] || { printf '%s\n' "$nosuch"; return 1; }
+       gql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' \
+         -F id="$node" --jq '{resolved: .data.resolveReviewThread.thread.isResolved}' ;;
+    3) api -X POST "$R/pulls/$1/ccr/comments/$2/resolve" >/dev/null && { printf '{"resolved": true}\n'; return 0; }
+       [ "${SHIP_HTTP_STATUS:-}" = 404 ] && { printf '%s\n' "$nosuch"; return 1; }
+       return 1 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Squash with the PR title as the subject; release tooling reads it. Verified by

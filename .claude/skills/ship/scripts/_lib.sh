@@ -11,66 +11,99 @@
 #
 # Host adapter interface. Each mechanic sources exactly one of host/github.sh or
 # host/ado.sh, chosen from the origin remote rather than from a flag. An adapter
-# defines every function below, in that read vocabulary.
+# defines every function below, in that read vocabulary. An entry marked
+# `(fails with {status})` prints {status} on failure where the adapter reports
+# one, and the mechanic carries it into its verdict's `status`; `az` reports
+# none, so on Azure DevOps that verdict reads `status: null`.
+#
+# SHIP_HOST_ADAPTER is test-only: set, it names the file ship_load_host sources
+# in place of host/$SHIP_HOST.sh; ship_detect_host still runs first. Ship's
+# source repo points it at a fixture-driven adapter in its test suite, so a
+# mechanic runs as a script without a host. Nothing under skills/ outside this
+# file may read it, which that repo's contract gate enforces.
 #
 #   host_tooling_reasons                 -> one missing-tool reason per line
 #   host_tooling_install                 -> install the host CLI where absent; non-zero = could not
 #   host_identity                        -> the login the claim is written as
-#   host_can_push                        -> true | false | unknown
+#                                           (fails with {status}, which reaches a verdict only through
+#                                           the GitHub writes that open with this read,
+#                                           host_pr_comment and host_pr_reply_thread)
+#   host_can_push                        -> true | false on GitHub; always unknown on Azure
+#                                           DevOps, which has no cheap push probe
 #   host_copilot_login                   -> the login `copilot_code_review` governs, or
-#                                           nothing on a host with no Copilot reviewer
+#                                           nothing on Azure DevOps, which has no Copilot reviewer
 #   host_copilot_review_on_push          -> true | false, whether a push to an open PR
 #                                           draws a fresh Copilot round on the default
 #                                           branch; non-zero and silent where the host
-#                                           cannot answer, which preflight warns on
+#                                           cannot answer (always, on Azure DevOps, which has
+#                                           no such ruleset), which preflight warns on
 #   host_issue_get <n>                   -> {number,title,body,state,is_pr,labels[],assignees[],created_at,url}
 #   host_issue_comments <n>              -> [{author,body,created_at}]
 #   host_issue_blockers_open <n>         -> [n, ...] open blockers; non-zero exit = query unavailable
 #   host_issue_linked_prs <n>            -> {closing:[{number,state}],
 #                                           mentions:[{number,kind,state}]}
-#                                           closing: live PRs whose body closes <n>.
+#                                           closing: live PRs whose body closes <n>; on Azure
+#                                           DevOps, every live linked PR, since a linked PR
+#                                           closes the work item on completion.
 #                                           mentions: everything else that names it,
-#                                           kind "pr" or "issue"; none where the host
-#                                           records no cross-reference of its own.
+#                                           kind "pr" or "issue"; [] on Azure DevOps,
+#                                           which records work-item links rather than
+#                                           mentions.
 #   host_issue_assign <n> <identity>
 #   host_issue_unassign <n> <identity>
 #   host_issue_has_label <n> <label>     -> exit 0 when present
 #   host_issue_add_label <n> <label>
 #   host_issue_remove_label <n> <label>  (no-op success when absent)
-#   host_issue_comment <n> <body>        (on failure, a {status} where the adapter reports one)
+#   host_issue_comment <n> <body>        (fails with {status})
 #   host_issue_close <n>
 #   host_issue_create <title> <body-file> <label> -> {number,url}
 #   host_issues_open                     -> [{number,title,url}] every open issue, newest first,
-#                                           issues alone. Narrows only where the host refuses the
-#                                           whole set, and says so on stderr when it does.
+#                                           issues alone. Narrows only on Azure DevOps, where WIQL
+#                                           refuses a set past 20000 rows, and says so on stderr
+#                                           when it does.
 #   host_pr_create <head> <base> <title> <body-file> <issue> -> {number,url,created_at}
 #   host_pr_get <pr>                     -> {number,url,title,body,head_sha,head_ref,base_ref,state,mergeable}
 #   host_pr_for_branch <branch>          -> {number,state} of the newest PR with that head, or null
 #   host_pr_checks <pr> <head_sha>       -> [{name,status}]
+#                                           status: pending | success | failure.
 #   host_pr_reviews <pr> <head_sha> [<full-ids-json>]
 #                                        -> {on_head:[REVIEW],all:[REVIEW],total}
-#                                           REVIEW = {id,login,state,substantive,submitted_at,body}
+#                                           REVIEW = {id,login,state,submitted_at,body}
+#                                           state: approved, changes or comment.
+#                                           An Azure DevOps reviewer vote is a state rather than a
+#                                           written, timed round, so a vote's row carries id null,
+#                                           body "" and submitted_at null.
+#                                           Adapters send no `substantive`; poll-pr
+#                                           adds it (`SHIP_SUBSTANTIVE`).
 #                                           id: what the host knows the round by (a GitHub review,
-#                                           an Azure DevOps thread), null where it records a state
-#                                           rather than a round. poll-pr --full names ids from here.
+#                                           an Azure DevOps thread), null for a vote. poll-pr --full
+#                                           names ids from here.
 #                                           body: the round's text. Phase 7 triages from it.
 #                                           Past 2000 chars it is clipped and marked
 #                                           "...[truncated]", unless <full-ids-json> names its id;
-#                                           "" where the host records a state rather than a
-#                                           written round.
+#                                           "" for a vote.
 #                                           all: every round across heads, for poll-pr --since.
-#                                           submitted_at: one UTC spelling, or null where the host
-#                                           records state rather than a timed event (an ADO vote),
-#                                           which the --since rule then cannot admit.
+#                                           submitted_at: one UTC spelling, or null for a vote, which
+#                                           the --since rule therefore cannot admit.
 #   host_pr_threads <pr>                 -> [{id,resolved,replied,author,path,body}]; non-zero exit =
 #                                           unavailable. replied: this identity has a comment in the
 #                                           thread, which is how phase 7 skips a thread it already
 #                                           dispositioned in an earlier round.
-#                                           GitHub rows also carry comment_id, the thread's first
-#                                           review comment: the REST reply target that host's
-#                                           reply is keyed to. On Azure DevOps the thread id is
-#                                           that target already.
-#   host_pr_reviewer_blocked <pr> <login>-> JSON string | null
+#                                           GitHub rows also carry comment_id, outdated and url,
+#                                           which no mechanic reads. comment_id is the thread's first
+#                                           review comment, the REST target GitHub's reply is keyed
+#                                           to; the thread id is that same id, as a string.
+#                                           outdated: the thread sits on a superseded diff. url:
+#                                           that first comment's page. Azure DevOps rows carry none
+#                                           of the three: the thread id is that reply target already.
+#   host_pr_reviewer_blocked <pr> <login>-> {line, at} | null: that login's latest
+#                                           quota or rate-limit notice line, from its review
+#                                           bodies or its PR comments, and the UTC time the row
+#                                           carrying it was posted. null on Azure DevOps, where
+#                                           every comment is a thread that host_pr_reviews already
+#                                           carries, so a notice there reaches poll-pr as a review
+#                                           row, graded by SHIP_SUBSTANTIVE and refused through
+#                                           SHIP_REFUSED_BY.
 #   host_workflow_runs <file> <since-iso>-> [{status,conclusion,created_at,url,title}] the runs
 #                                           of that workflow file, for the event a comment
 #                                           transport starts, created at or
@@ -79,27 +112,39 @@
 #                                           every other status is a run still able to deliver,
 #                                           conclusion the host's own word or null while it runs,
 #                                           title the issue or PR the triggering event sits on,
-#                                           which is what narrows the runs to one PR. Non-zero and
-#                                           silent where the host has no such read or could not
-#                                           answer it, which poll-pr reports as "unavailable" and
-#                                           holds the window to the constant on.
+#                                           which is what narrows the runs to one PR. Non-zero where
+#                                           the host could not answer; always non-zero and silent on
+#                                           Azure DevOps, which has no such read. poll-pr reports
+#                                           either as "unavailable" and holds the window to the
+#                                           constant on.
 #   host_pr_request_review <pr> <login>  -> {requested,readback[],requested_at}
-#                                           requested_at: ISO-8601 time of the request event,
-#                                           or the wall clock where the host records none.
+#                                           readback: the host's own names for the PR's reviewers:
+#                                           logins on GitHub, each reviewer's uniqueName and
+#                                           displayName in one flat list on Azure DevOps. The adapter
+#                                           matches <login> against it for `requested`; request-review
+#                                           passes it through and no mechanic reads it.
+#                                           requested_at: ISO-8601 time of the request event, or,
+#                                           where the host records none (always, on Azure DevOps),
+#                                           the wall clock, stamped before the call.
 #   host_pr_comment <pr> <body-file>     -> {id,url,created_at}
+#                                           (fails with {status})
+#                                           id: the comment's id on GitHub, the thread's id on
+#                                           Azure DevOps, where a PR comment is a thread of its own.
 #                                           created_at: the host's own creation time for the
 #                                           comment, one UTC spelling, or null where the host
-#                                           records none, the same way submitted_at is null
-#                                           where the host records state rather than a timed
-#                                           event. `request-review`'s comment transport
+#                                           records none, the same way submitted_at is null for
+#                                           a vote. `request-review`'s comment transport
 #                                           reports it as `requested_at` and answers the null
 #                                           with a wall clock read before the post, so --since
 #                                           always has a bound to compare against.
-#   host_pr_set_body <pr> <body-file>
-#   host_pr_set_title <pr> <title>
+#   host_pr_set_body <pr> <body-file>    (fails with {status})
+#   host_pr_set_title <pr> <title>       (fails with {status})
 #   host_pr_reply_thread <pr> <thread> <body-file> -> {replied,url}
+#                                           (fails with {status})
 #                                           A reply inside the thread, leaving its status alone.
 #   host_pr_resolve_thread <pr> <thread> -> {resolved}
+#                                           A failure may print {resolved,detail}, resolved false,
+#                                           which resolve-thread reports as its error ("no such thread").
 #   host_pr_merge <pr> <subject>         -> exit 0 once the host reports merged
 #   host_prs_open                        -> [{number,title,head_ref,author,url,created_at}]
 #   host_issues_ready <label>            -> [{number,title,created_at}] oldest first, unassigned, not PRs
@@ -234,7 +279,8 @@ ship_detect_host() {
 ship_load_host() {
   ship_detect_host || ship_tooling "cannot derive the host from the origin remote"
   # shellcheck source=/dev/null
-  source "$SHIP_SCRIPTS/host/$SHIP_HOST.sh" || ship_tooling "cannot load host adapter $SHIP_HOST"
+  source "${SHIP_HOST_ADAPTER:-$SHIP_SCRIPTS/host/$SHIP_HOST.sh}" \
+    || ship_tooling "cannot load host adapter ${SHIP_HOST_ADAPTER:-$SHIP_HOST}"
 }
 
 # Triage roles are canonical names; the label strings a repo actually uses live
@@ -302,9 +348,18 @@ ship_missing_skill_reasons() {
 # to an awk program and call it once per line, before any heading test. It
 # holds its state for the length of the input in the globals `_fenced`,
 # `_fence_char` and `_fence_len`, so a host program leaves those three names to
-# it.
-readonly SHIP_AWK_FENCE='function ship_fence(line,   s, c, n) {
-    s = line; sub(/^ ? ? ?/, "", s); c = substr(s, 1, 1)
+# it, and reads no `RSTART` or `RLENGTH` of its own across a call, which
+# `ship_deindent`'s `match` overwrites.
+#
+# `ship_deindent(s)` strips up to three leading spaces. It is a `match` because
+# mawk, the default awk on Debian and Ubuntu, reads `sub(/^ ? ? ?/, ...)` as one
+# optional space.
+readonly SHIP_AWK_FENCE='function ship_deindent(s) {
+    if (match(s, /^ +/)) s = substr(s, (RLENGTH < 3 ? RLENGTH : 3) + 1)
+    return s
+  }
+  function ship_fence(line,   s, c, n) {
+    s = ship_deindent(line); c = substr(s, 1, 1)
     if (c != "`" && c != "~") return _fenced
     n = 0; while (substr(s, n + 1, 1) == c) n++
     if (n < 3) return _fenced
@@ -550,7 +605,7 @@ readonly SHIP_REVIEW_CLIP='def clip($id):
   else . end;'
 
 # The vocabulary a reviewer refuses a round in, shared by the two readers: the
-# blocked lookup, which returns the notice line, and the reviews projection,
+# blocked lookup, which returns the notice line, and `SHIP_SUBSTANTIVE` below,
 # which refuses to call such a body a round.
 #
 # The refusal VERB carries the match, not the bare noun. A round that merely
@@ -568,7 +623,6 @@ readonly SHIP_REVIEW_CLIP='def clip($id):
 #                 phrase reads as a notice. The run then waits the window out
 #                 and reports the reviewer blocked, with the body still in
 #                 `rounds[]` to read, rather than losing it.
-# shellcheck disable=SC2034  # read by the host adapters that source this library
 readonly SHIP_BLOCKED_NOTICE='def notice_re:
   "(unable|not able|cannot|could not|failed)( to)? [a-z ]{0,24}review"
   + "|(reached|exceeded|hit|out of|ran out of) [a-z ]{0,24}(quota|rate limit)"
@@ -582,16 +636,51 @@ def is_notice:
   [notice_body | splits("(?<=[.!?]) +") | select(test("\\S"))] as $sentences
   | ($sentences | length) > 0 and all($sentences[]; test(notice_re; "i"));'
 
+# Ship's grade of a review row, applied by poll-pr alone, once, to the
+# `host_pr_reviews` answer before any rule below reads it: every row in
+# `on_head` and `all` gets `substantive`, overwriting whatever an adapter sent,
+# so a notice refuses the round on every host alike (#268). A row with a body is
+# a round unless the body is only a refusal notice. A bodiless row is a round
+# only when it is a verdict, `approved` or `changes`: a GitHub approval with no
+# text, an Azure DevOps vote. A bodiless comment is a reviewer's reply to one
+# thread, which posts as a review row of its own, and counting it lands round 2
+# off round 1.
+# shellcheck disable=SC2034  # read by poll-pr
+readonly SHIP_SUBSTANTIVE="$SHIP_BLOCKED_NOTICE"'
+  def substantive:
+    if (.body // "") != "" then (.body | is_notice | not)
+    else (.state | IN("approved", "changes")) end;
+  .on_head |= map(.substantive = substantive) | .all |= map(.substantive = substantive)'
+
 # poll-pr's two landing rules over a `host_pr_reviews` projection, invoked with
 # `--arg l <normalised login>` and `--arg s <since|"">`. `$l` arrives already
 # lowercased and stripped of a `[bot]` suffix, the row side normalised here to
-# match. Only a SUBSTANTIVE row lands, which is what keeps a quota notice from
-# answering for a round that has yet to arrive (#155).
+# match. Only a SUBSTANTIVE row lands, as `SHIP_SUBSTANTIVE` graded it, which is
+# what keeps a quota notice from answering for a round that has yet to arrive
+# (#155).
 # shellcheck disable=SC2034  # read by poll-pr
 readonly SHIP_LANDED_BY='
   def mine: [.[] | select(.substantive and ((.login | ascii_downcase | sub("\\[bot\\]$"; "")) == $l))];
   if $s == "" then (if (.on_head | mine) != [] then "head" else null end)
   else (if (.all | mine | map(select(.submitted_at != null and .submitted_at >= $s))) != [] then "since" else null end)
+  end'
+
+# poll-pr's refusal test, over the same projection and the same two arguments:
+# the rule that admitted a NOTICE row by that login, a row with a body that is
+# not substantive, which is the one kind `is_notice` leaves. A quota notice
+# answers the request it follows, and no round is coming after it: Copilot's
+# quota is the requesting user's and monthly, so waiting the window out, or
+# asking again, buys nothing (#248, #250: every poll spent its whole window on
+# a refusal already posted). Read only when no round landed, so a round that
+# follows a notice still lands. A notice posted as a PR comment rather than as a
+# review leaves no row here: poll-pr admits it from `host_pr_reviewer_blocked`'s
+# `at`, under the since rule only (#256).
+# shellcheck disable=SC2034  # read by poll-pr
+readonly SHIP_REFUSED_BY='
+  def refusals: [.[] | select((.substantive | not) and (.body // "") != ""
+                              and ((.login | ascii_downcase | sub("\\[bot\\]$"; "")) == $l))];
+  if $s == "" then (if (.on_head | refusals) != [] then "head" else null end)
+  else (if (.all | refusals | map(select(.submitted_at != null and .submitted_at >= $s))) != [] then "since" else null end)
   end'
 
 # poll-pr's pick of THE run a comment-transport reviewer's round is waiting on,
@@ -628,7 +717,7 @@ ship_fence_unclosed() {
     { was = fenced; fenced = ship_fence($0)
       if (!was && fenced) {
         open_line = NR; open_run = $0
-        sub(/^ ? ? ?/, "", open_run); sub(/[^`~].*$/, "", open_run)
+        open_run = ship_deindent(open_run); sub(/[^`~].*$/, "", open_run)
       } }
     END { if (fenced) printf "line %d: %s\n", open_line, open_run }' <<<"$1"
 }
@@ -758,7 +847,7 @@ ship_reviewers() {
 # name, because two blocks sharing a name would otherwise answer for each other.
 #
 # `Request: comment` with the phrase left off is refused on its own, before the
-# pair is read: `request-review --comment` takes no empty phrase, so that block
+# pair is read: the comment transport has no phrase to post, so that block
 # cannot be asked for a round at all, and reading it as a transport owing a
 # `Workflow:` would let one carrying a `Workflow:` through. With the bare value
 # refused above it, the transport is a plain `startswith("comment ")`, which is
@@ -816,6 +905,78 @@ ship_reviewer_reasons() {
            then "profile invalid: \($x.name) has Workflow: \($x.workflow) but its Request: is \($x.request // "None."), not comment <phrase>"
            else empty end)
       end'
+}
+
+# ship_reviewer_row <rows-json> <name>: the `ship_reviewers` row whose `### `
+# heading is <name>, matched exactly, the key `Fallback-for:` and the merge
+# summary already use. A name no block carries prints the refusal, listing the
+# names the profile does carry, and returns 1: `poll-pr` and `request-review`
+# exit 2 on it, because a mistyped name is a malformed invocation.
+ship_reviewer_row() {
+  jq -ce --arg n "$2" 'first(.[] | select(.name == $n))' <<<"$1" 2>/dev/null && return 0
+  jq -rn --argjson r "$1" --arg n "$2" \
+    '"no ## Reviewers block is named \($n); the profile names: \(
+       if ($r | length) == 0 then "none" else [$r[].name] | join(", ") end)"' 2>/dev/null \
+    || printf 'the ## Reviewers blocks could not be parsed\n'
+  return 1
+}
+
+# ship_reviewer_by_name <name>: `ship_reviewer_row` over the profile in the
+# caller's checkout, the one lookup `poll-pr` and `request-review` share. Prints
+# the row, or the refusal and returns 1, a missing profile included.
+ship_reviewer_by_name() {
+  local profile
+  profile=$(ship_profile_path) && [ -f "$profile" ] \
+    || { printf 'no ship profile at %s; --reviewer reads it\n' "${profile:-docs/agents/ship.md}"; return 1; }
+  ship_reviewer_row "$(ship_reviewers "$(cat "$profile")")" "$1"
+}
+
+# ship_reviewer_derive <row-json> <since>: what a round of that reviewer is
+# polled and requested with, derived from its block rather than handed to the
+# mechanic flag by flag, as {name, login, rule, await_run, transport, phrase,
+# timeout, refusal}.
+#
+# `rule` is the landing rule `poll-pr` applies: `head` for an on-push reviewer,
+# whose every push earns a round on the new head, and `since` for every other
+# trigger, which posts one round per request on whatever head it lands on.
+# `transport` is `comment` where `Request:` reads `comment <phrase>`, with
+# `phrase` its text and, under the since rule, `await_run` the block's
+# `Workflow:`, the run that separates a round still being written from one that
+# will not come; the run read is keyed by the --since instant, which a head-rule
+# poll has none of. `host` otherwise, the host's own request-a-reviewer call,
+# with both null. `timeout`
+# is the poll's default bound. Under the head rule it is 480, the bound the
+# on-push loop has always polled a push's round on: nothing is requested, so no
+# transport sizes it. Under the since rule it is by transport: 600 where the
+# host's call is the transport, since its round can take several minutes to
+# land and a bound of a minute or two reports `silent` on a review still
+# coming, and 60 where a
+# comment is, since the run read then holds the window open for as long as a
+# round is being written, and a free round that starts no run is answered by
+# `reviewer_run.status: "none"` on the first pass. After a request the 60 is
+# the bound on the run's creation, not on the round: the host creates the
+# `issue_comment` run within seconds of the comment, and from then on the run,
+# not the constant, holds the window. A backed-up queue that outlasts it reads
+# `never-queued`; a caller expecting one passes `--timeout`.
+#
+# `refusal` is null, or the line `poll-pr` exits 2 on, where the caller's
+# <since> disagrees with the rule: a --since for an on-push reviewer, or none for
+# a since-rule one. It is reported rather than exited on because `request-review`
+# takes no --since and reads the transport alone.
+ship_reviewer_derive() {
+  jq -c --arg s "$2" '
+    ((.request // "") | startswith("comment ")) as $c
+    | (if .trigger == "on-push" then "head" else "since" end) as $rule
+    | {name, login, rule: $rule,
+       await_run: (if $c and $rule == "since" then .workflow else null end),
+       transport: (if $c then "comment" else "host" end),
+       phrase: (if $c then (.request | ltrimstr("comment ")) else null end),
+       timeout: (if $rule == "head" then 480 elif $c then 60 else 600 end),
+       refusal: (if $rule == "head" and $s != ""
+                 then "\(.name) is on-push, whose rounds land on the head: --since does not apply"
+                 elif $rule == "since" and $s == ""
+                 then "\(.name) is \(.trigger), whose rounds land by time: --since <iso> is required"
+                 else null end)}' <<<"$1"
 }
 
 # ship_copilot_trigger_reason <name> <trigger> <review_on_push>: the one
@@ -903,9 +1064,11 @@ ship_pr_state_reason() { # ship_pr_state_reason <state>
 # <identity> is the login the run posts as: its own thread replies land as review
 # rows of their own, and a convergence test that counts them reads its own voice
 # as the reviewer's. An empty <identity> drops nothing: a host that could not
-# name the run must not cost it the rounds it came for. <on_head|all> is `all`
-# under the --since rule and `on_head` under the head rule, matching the list
-# that rule lands from.
+# name the run must not cost it the rounds it came for. The awaited reviewer's
+# login, `.reviewer.login`, narrows the rounds to its rows: under `--reviewer
+# claude` a Copilot quota notice is not a round of claude's (#255).
+# <on_head|all> is `all` under the --since rule and `on_head` under the head
+# rule, matching the list that rule lands from.
 #
 # A round's body comes down to its lead line and its finding items, which is what
 # a triage acts on: the lead line carries the round's verdict and the items carry
@@ -927,7 +1090,9 @@ ship_pr_state_reason() { # ship_pr_state_reason <state>
 ship_brief() {
   jq -c --arg me "$2" --arg key "$3" --argjson full "${4:-[]}" '
     def norm: ascii_downcase | sub("\\[bot\\]$"; "");
-    def mine: $me != "" and (((.login // "") | norm) == ($me | norm));
+    def by($l): ((.login // "") | norm) == ($l | norm);
+    def mine: $me != "" and by($me);
+    def awaited($l): $l == "" or by($l);
     def clip: if length > 200 then .[0:200] + "\n...[truncated]" else . end;
     def finding_items:
       (if endswith("\n...[truncated]") then "\n...[truncated]" else "" end) as $mark
@@ -937,8 +1102,9 @@ ship_brief() {
         elif $lines[0] == $items[0] then (($items | join("\n")) + $mark)
         else ((([$lines[0]] + $items) | join("\n")) + $mark) end;
     def lead: [splits("\n") | select(test("^[ \t]*$") | not)] | (.[0] // "") | clip;
-    {head_sha, mergeable, landed_by, reviewer_run,
-     rounds: [.reviews[$key][] | select(mine | not) | . as $r
+    (.reviewer.login // "") as $await
+    | {head_sha, mergeable, reviewer, landed_by, refused_by, reviewer_blocked, reviewer_run,
+     rounds: [.reviews[$key][] | select((mine | not) and awaited($await)) | . as $r
               | {id, submitted_at, substantive,
                  body: (if ($full | index($r.id | tostring)) then $r.body
                         else ($r.body | finding_items) end)}],

@@ -15,6 +15,9 @@ case $pr in -*) ship_tooling "$usage" ;; esac
 case $thread in -*) ship_tooling "$usage" ;; esac
 [ $# -eq 2 ] || ship_tooling "unknown flag: $3"
 ship_load_host
-out=$(host_pr_resolve_thread "$pr" "$thread") || ship_fail "resolve call failed"
+# A failed call keeps the adapter's reason where it named one ("no such
+# thread"), in the same {error} shape a bare failure answers with.
+out=$(host_pr_resolve_thread "$pr" "$thread") \
+  || ship_fail "$(jq -r '.detail // empty' <<<"$out" 2>/dev/null | grep . || echo "resolve call failed")"
 jq --argjson pr "$pr" --arg t "$thread" '{pr: $pr, thread: $t} + .' <<<"$out"
 [ "$(jq -r .resolved <<<"$out")" = true ]

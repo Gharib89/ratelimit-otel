@@ -7,6 +7,96 @@ released version. See
 
 <!-- version list -->
 
+## v8.5.2 (2026-09-24)
+
+### Documentation
+
+- **ship**: The host contract names every per-host answer
+  ([#274](https://github.com/Gharib89/skills/pull/274),
+  [`d3247a2`](https://github.com/Gharib89/skills/commit/d3247a298ce489d0ce81ecdd551ed9dfee3d5cd1))
+
+
+## v8.5.1 (2026-09-24)
+
+### Bug Fixes
+
+- **ship**: Poll-pr grades review rows above the Host seam
+  ([#273](https://github.com/Gharib89/skills/pull/273),
+  [`7d6791f`](https://github.com/Gharib89/skills/commit/7d6791f0c22823e8074ba6270f8451b561d134c8))
+
+
+## v8.5.0 (2026-09-24)
+
+### Features
+
+- **ship**: An attended run in a cloud sandbox prepares it as an unattended run does
+  ([#263](https://github.com/Gharib89/skills/pull/263),
+  [`2101eae`](https://github.com/Gharib89/skills/commit/2101eae4be28ca49caa65dc32e47dcc817a734c4))
+
+
+## v8.4.4 (2026-09-24)
+
+### Bug Fixes
+
+- **ship**: Read, reply to and resolve review threads in the cloud sandbox through the proxy's REST
+  routes ([#261](https://github.com/Gharib89/skills/pull/261),
+  [`7aaf64f`](https://github.com/Gharib89/skills/commit/7aaf64f2711fa8299a699f2eaff57cc7e6a67be2))
+
+
+## v8.4.3 (2026-09-23)
+
+### Bug Fixes
+
+- **ship**: Admit a PR-comment quota notice under poll-pr's since rule
+  ([#258](https://github.com/Gharib89/skills/pull/258),
+  [`5e9bbbc`](https://github.com/Gharib89/skills/commit/5e9bbbc4d2417b72c1f3821cf00306a3487c1c52))
+
+
+## v8.4.2 (2026-09-23)
+
+### Bug Fixes
+
+- **ship**: Read the composed show-me rather than invoking it
+  ([#253](https://github.com/Gharib89/skills/pull/253),
+  [`9f4c5ae`](https://github.com/Gharib89/skills/commit/9f4c5aef7db80237d8bc6706f08641a4454b68ed))
+
+
+## v8.4.1 (2026-09-23)
+
+### Bug Fixes
+
+- **ship**: Read a Copilot review request back under the name GitHub records it as
+  ([#250](https://github.com/Gharib89/skills/pull/250),
+  [`35ec22b`](https://github.com/Gharib89/skills/commit/35ec22bd4063ba056c987e84139a86de295f5e32))
+
+
+## v8.4.0 (2026-09-23)
+
+### Features
+
+- **ship**: Poll-pr and request-review take the Reviewer by name
+  ([#248](https://github.com/Gharib89/skills/pull/248),
+  [`ef35ae6`](https://github.com/Gharib89/skills/commit/ef35ae6b5805d05becf0aebc3abbe4857abbcbba))
+
+
+## v8.3.1 (2026-09-23)
+
+### Bug Fixes
+
+- **ship**: A reviewer's quota refusal closes the poll and ends its loop at degraded: blocked
+  ([#251](https://github.com/Gharib89/skills/pull/251),
+  [`62c29e9`](https://github.com/Gharib89/skills/commit/62c29e90d098ac0e82716d53f0f45ed073db88df))
+
+
+## v8.3.0 (2026-09-23)
+
+### Features
+
+- **ship**: A Host fake at the host seam, and the pass-through mechanics get behavioural tests
+  ([#246](https://github.com/Gharib89/skills/pull/246),
+  [`89cba9d`](https://github.com/Gharib89/skills/commit/89cba9dbcd97e064d16297927bc7fecfec09a676))
+
+
 ## v8.2.1 (2026-09-23)
 
 ### Documentation

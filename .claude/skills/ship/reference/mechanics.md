@@ -29,7 +29,8 @@ local-gate contract, and that script answers no `--help`.
 
 | Mechanic | Phase |
 |---|---|
-| `run-file init` | the required first action |
+| `prepare` (runs `tooling`, then the Cloud lane `Bootstrap:`) | every run but the no-issue lane's inner one, before `run-file init` |
+| `run-file init` | the required first action after `prepare` |
 | `run-file open`, `run-file close`, `run-file skip`, `run-file timing` | every phase flip, and the merge summary's `Timing:` row |
 | `preflight` | 0 |
 | `read-issue` | 0 |
@@ -52,7 +53,7 @@ local-gate contract, and that script answers no `--help`.
 | `ci-wait` | 8 |
 | `merge` | 9, on approval |
 | `cleanup` | 9, after merge |
-| `tooling`, `list-prs` and `select` | unattended lane |
+| `list-prs` and `select` | unattended lane |
 
 ## Ask the script what its flags are
 
@@ -62,6 +63,12 @@ stderr, before it loads a host adapter and without reaching the host, which is
 why `SKILL.md`'s table carries phases and not flags: a table can go stale
 against the script, and `--help` cannot. Only the first argument is read, so
 `poll-pr.sh 42 --help` is a poll of PR 42 and not a help call.
+
+A mechanic acting for one reviewer, `poll-pr` and `request-review`, takes it as
+`--reviewer <name>`, the `### <name>` heading under the profile's
+`## Reviewers`, and reads the rest off that block: the login, the landing rule,
+the transport, the workflow run to await and the poll's default bound. The run
+passes the block's name, the one the merge summary uses.
 
 ## The exit codes
 
@@ -92,7 +99,9 @@ Reads come back in one vocabulary on both hosts: checks
 `pending|success|failure`, mergeable `clean|conflict|unknown`, review
 `approved|changes|comment`, and threads as `resolved: true|false` per thread, or
 the whole `threads` field as the string `"unavailable"` when the state could not
-be read.
+be read. A thread's `id` is what `reply-thread` and `resolve-thread` take (on
+GitHub, the thread's root review comment id, as a string); an id no thread
+carries answers `no such thread`.
 
 ## Run them inline
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# The host's own tool, present before anything else runs. The unattended lane
-# runs it first: the cloud sandbox image ships without `gh` (measured in
-# "Probe the cloud sandbox proxy with ship's GitHub REST calls"), and only the
-# host adapter knows what its tool is and how to install it, so this is core,
-# which is why it lives here rather than on a profile Bootstrap: line every repo
-# repeats.
+# The host's own tool, present before anything else runs. `prepare` runs it
+# first in a cloud sandbox and in any `--unattended` run: the sandbox image
+# ships without `gh` (measured in "Probe the cloud sandbox proxy with ship's
+# GitHub REST calls"), and only the host adapter knows what its tool is and how
+# to install it, so this is core, which is why it lives here rather than on a
+# profile Bootstrap: line every repo repeats.
 #
 #   tooling [--install]
 #

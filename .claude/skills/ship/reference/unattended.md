@@ -23,21 +23,29 @@ the flag.
    summary, then return with the PR link. No waiting, no polling, no merge. The
    claim holds; the open PR is what keeps later fires off the issue.
 
-Before any of it, **`tooling --install`**: the cloud sandbox image has `jq`,
-`curl` and `git` but not the host's CLI, and only the host adapter knows what
-that is and how it installs (GitHub: `apt-get install -y gh`, the one route
-the sandbox proxy passes). Core in every repo, which is why it sits here rather
-than on a profile `Bootstrap:` line. Still missing afterwards: stop
-`host-unreachable`, exactly as preflight would. Read the token through
-preflight's `user` and repo reads, which are the proof; `gh auth status` reports
-the working token as invalid behind the sandbox proxy.
+Before any of it, **`prepare --unattended`**, which in this lane runs whether
+or not the run is in a cloud sandbox, so a local `ship --unattended` still
+reproduces a fire. Its first step is `tooling --install`: the cloud sandbox
+image has `jq`, `curl` and `git` but not the host's CLI, and only the host
+adapter knows what that is and how it installs (GitHub: `apt-get install -y
+gh`, the one route the sandbox proxy passes). Core in every repo, which is why
+it sits in a mechanic rather than on a profile `Bootstrap:` line. Its second is
+the profile's `## Cloud lane` `Bootstrap:`. An attended run inside a cloud
+sandbox runs the same `prepare`; a failed step stops it under the same stop
+word and asks, with the failing step's tail. Read the token through
+preflight's `user` and repo reads, which are the proof; `gh auth status`
+reports the working token as invalid behind the sandbox proxy.
 
-Two sandbox facts the run meets and neither is a failure. Review-thread state
-is GraphQL, which the proxy blocks, so `poll-pr` reports `threads:
-"unavailable"` and a reviewer that opened threads exits `degraded: unreachable`
-and proceeds to the merge gate. Remote ref deletion is blocked both ways, which
-costs nothing here: the lane returns at the merge gate and `merge` plus
-`cleanup` run attended from a human's machine.
+Two sandbox facts the run meets and neither is a failure. The proxy refuses
+GitHub GraphQL, where review-thread state lives, and names REST routes in its
+place; the GitHub adapter switches to those on that refusal, so `poll-pr`,
+`reply-thread` and `resolve-thread` work on threads as they do outside the
+sandbox (a bot's thread `author` keeps its `[bot]` suffix there) and a reviewer
+exits by its normal rules. `threads: "unavailable"`, and with it `degraded:
+unreachable`, now means the thread read failed on both paths. Remote
+ref deletion is blocked both ways, which costs nothing here: the lane returns
+at the merge gate and `merge` plus `cleanup` run attended from a human's
+machine.
 
 Unchanged: `defer-to-ci` is the only verification disposition that proceeds
 (`hand-off` and `blocked` hand back), and an `unexercised` result proceeds on
@@ -51,14 +59,15 @@ cannot infer the absence of a human.
 ## The lane with no issue: `ship --unattended`
 
 With no `<issue>`, ship runs the whole unattended lane before phase 0. It
-writes nothing to the tracker until the claim in phase 1; the four stops below
+writes nothing to the tracker until the claim in phase 1; the stops below
 leave no trace on any issue.
 
-0. **Tooling.** `tooling --install`; still missing: stop `host-unreachable`.
-1. **Bootstrap.** If the profile's `## Cloud lane` names a `Bootstrap:`, run it
-   before anything can be claimed. Non-zero exit: stop `bootstrap-failed`.
-   This is sandbox-image repair for the repo's own stack, distinct from
-   `## Worktree`'s `Bootstrap:`, which runs in every lane after isolate.
+0. **Prepare.** `prepare --unattended`, one call running both steps before
+   anything can be claimed; `failed: "tooling"`: stop `host-unreachable`.
+1. **Bootstrap.** Already run as `prepare`'s second step, not run again;
+   `failed: "bootstrap"`: stop `bootstrap-failed`. It is sandbox-image repair
+   for the repo's own stack, distinct from `## Worktree`'s `Bootstrap:`, which
+   runs in every lane after isolate.
 2. **PR cap.** `list-prs --open`; at or above the profile's `PR cap:` (default
    3, `none` disables), stop `pr-queue-full`. One operator's merge-review queue
    is the bottleneck, not the backlog.
@@ -68,7 +77,8 @@ leave no trace on any issue.
    The host's blocker query exists and failed: stop `blockers-unavailable`;
    shipping a dependent issue out of order builds a PR on unmerged work, so the
    stop stands until the query answers.
-4. **Run** phases 0 to 9 on the selected issue as `ship <issue> --unattended`.
+4. **Run** phases 0 to 9 on the selected issue as `ship <issue> --unattended`;
+   preparation is done, so skip `prepare`.
 5. **Report**: the PR link and the merge summary's location, or the stop
    reason verbatim (ship's own reasons pass through unchanged, including
    `host-unreachable` from preflight).
