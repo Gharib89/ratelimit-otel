@@ -119,4 +119,4 @@ The authority for the plugin API is `.claude/types/claude-code.d.ts`, regenerate
 PR cap: 3
 Bootstrap: scripts/cloud-ship-bootstrap.sh
 
-The sandbox image ships without `gitleaks`, and the local gate's `secrets` gate is required in every lane, so without this step every cloud run stops at phase 5 with `local gate unavailable: secrets`. The script installs a pinned gitleaks release, checked against that release's `checksums.txt`, into `$HOME/.local/bin`, which the image already puts on `PATH`. It leaves any gitleaks already on `PATH` alone, so a local `ship --unattended` on a workstation keeps the developer's own copy.
+The sandbox image ships without `gitleaks`, and the local gate's `secrets` gate is required in every lane, so without this step every cloud run stops at the local gate with `local gate unavailable: secrets`. The script's header carries how it stays safe to rerun and safe on a workstation.
