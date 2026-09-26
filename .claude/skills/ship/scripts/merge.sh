@@ -26,7 +26,8 @@
 # stdout: {merged, issue_closed, remote_branch_deleted, base_updated,
 #          claim_released, ready_for_agent_removed}
 #         `merge none` omits issue_closed, claim_released and ready_for_agent_removed.
-# exit: 0 every step true · 1 a step is false (finish it by hand), the PR is
+# exit: 0 every step true · 1 a step is false (re-run merge: an already-merged
+#       PR skips straight to the remaining steps), the PR is
 #       neither open nor already merged (`{"error": "pr-closed: <state>"}`), or
 #       the base moved
 #       (`{"error": "stale-base: behind <n> on <base>"}`); neither merges anything

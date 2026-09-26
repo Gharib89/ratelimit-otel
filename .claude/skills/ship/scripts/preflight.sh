@@ -24,7 +24,7 @@
 # suffix. Every other check runs unchanged.
 #
 # stdout: {host, repo, identity, profile, ok, reasons[], mentions[], mentioned_by[],
-#          pruned[]}
+#          pruned[], reviewers[]}
 #   reasons use the stop names verbatim, detail after a colon:
 #   closed · is a pull request · already claimed · existing PR · existing branch
 #   · worktree exists · not triaged: run /triage first · ready-for-human:
@@ -35,7 +35,11 @@
 #   {number, kind: issue|pr, state}, so a run learns whether a mention is an
 #   open issue or a merged PR without reaching for the host CLI; both lists
 #   carry live cross-references only, open issues and open or merged PRs. pruned[] lists worktrees removed because their PR is merged or
-#   closed.
+#   closed. reviewers[] is one {name, review_on_push} row per reviewer block:
+#   the copilot_code_review ruleset's true or false for the block posting under
+#   the Copilot login, null for every other block and where the host could not
+#   answer. It is the ruleset read the Trigger check rests on, reported for
+#   the human; the review loop does not branch on it.
 # exit: 0 actionable · 1 not actionable · 2 tooling, or host-unreachable
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
@@ -58,7 +62,7 @@ identity=null
 unreachable() { # <detail>
   jq -n --arg h "$SHIP_HOST" --arg r "$SHIP_REPO_SLUG" --argjson id "$identity" --arg d "$1" \
     '{host: $h, repo: $r, identity: $id, ok: false, reasons: ["host-unreachable: " + $d],
-      mentions: [], mentioned_by: [], pruned: []}'
+      mentions: [], mentioned_by: [], pruned: [], reviewers: []}'
   exit 2
 }
 
@@ -75,6 +79,7 @@ esac
 
 root=$(ship_main_checkout) || ship_tooling "not inside a git checkout"
 reasons=()
+reviewers='[]'
 
 # Profile: presence, the fourteen headings in order, the Schema line, and the
 # Host cross-check. `ship_profile_path` carries which checkout it is read from,
@@ -127,6 +132,7 @@ else
   copilot_row=$(ship_copilot_row "$(host_copilot_login)" "$rows")
   copilot_name=${copilot_row%%	*}
   copilot_trigger=${copilot_row#*	}
+  review_on_push=""
   if [ -n "$copilot_trigger" ]; then
     if review_on_push=$(host_copilot_review_on_push); then
       reason=$(ship_copilot_trigger_reason "$copilot_name" "$copilot_trigger" "$review_on_push")
@@ -135,6 +141,8 @@ else
       echo "warning: could not read the copilot_code_review ruleset; $copilot_name Trigger: $copilot_trigger is unchecked" >&2
     fi
   fi
+  reviewers=$(jq -c --arg n "$copilot_name" --arg r "$review_on_push" \
+    'map({name, review_on_push: (if .name == $n and ($r == "true" or $r == "false") then ($r == "true") else null end)})' <<<"$rows")
 fi
 
 # The skills ship loads through the Skill tool, from ship's own frontmatter:
@@ -207,7 +215,8 @@ done
 ok=true; [ "${#reasons[@]}" -eq 0 ] || ok=false
 printf '%s\n' "${reasons[@]+"${reasons[@]}"}" | jq -Rs --arg h "$SHIP_HOST" --arg r "$SHIP_REPO_SLUG" \
   --argjson id "$identity" --arg p "$profile" --argjson ok "$ok" --argjson m "$mentions" \
-  --argjson mb "$mentioned_by" --argjson pr "$pruned" \
+  --argjson mb "$mentioned_by" --argjson pr "$pruned" --argjson rv "$reviewers" \
   '{host: $h, repo: $r, identity: $id, profile: $p, ok: $ok,
-    reasons: (split("\n") | map(select(. != ""))), mentions: $m, mentioned_by: $mb, pruned: $pr}'
+    reasons: (split("\n") | map(select(. != ""))), mentions: $m, mentioned_by: $mb, pruned: $pr,
+    reviewers: $rv}'
 $ok
