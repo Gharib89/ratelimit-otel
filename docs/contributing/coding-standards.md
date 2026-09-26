@@ -6,7 +6,7 @@ The standards every change in this repo is reviewed against. The `code-review` s
 
 - `tsc --noEmit`, per `tsconfig.json`, over `.claude/types` and `plugin/hooks`.
 - `claude plugin validate plugin --strict`, per `plugin/.claude-plugin/plugin.json`. It reads the plugin the way the engine will and refuses what the engine would, so its capability list is the surface a reviewer judges without opening the source.
-- `gitleaks detect`, per the `secrets` gate in `scripts/local-gate.sh`, required in every lane.
+- `gitleaks detect`, per the `secrets` gate in `scripts/local-gate.sh`, required in every lane. The cloud sandbox image has no gitleaks, so a cloud run gets a pinned, checksum-verified copy from `scripts/cloud-ship-bootstrap.sh`, the ship profile's `## Cloud lane` `Bootstrap:`.
 - `scripts/release-archive.sh`, per the `archive` gate in `scripts/local-gate.sh`. The release archive is built only mid-release on `main`, so the gate builds it from the checkout and proves its layout check refuses a manifest below the zip root, a missing `hooks/hooks.json`, an included test file, a file name whose version disagrees with the manifest's, and a name that is not `ratelimit-otel-<version>.zip`.
 - `node scripts/set-manifest-version.mjs`, per the `release` gate in `scripts/local-gate.sh`. The manifest writer runs nowhere else until a release fires it, and the way it fails is by writing nothing, so the gate drives it against a throwaway manifest and reads the version back.
 
