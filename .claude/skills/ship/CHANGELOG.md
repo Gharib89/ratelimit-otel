@@ -7,6 +7,77 @@ released version. See
 
 <!-- version list -->
 
+## v9.0.1 (2026-09-25)
+
+### Refactoring
+
+- **ship**: A prose deletion pass and the deletes-at-least-as-much rule
+  ([#311](https://github.com/Gharib89/skills/pull/311),
+  [`1794420`](https://github.com/Gharib89/skills/commit/1794420591f3d8cc41efd36d891771f5c51f7a65))
+
+
+## v9.0.0 (2026-09-25)
+
+### Features
+
+- **ship**: A narrower mechanic rule and a best-effort reviewer loop
+  ([#309](https://github.com/Gharib89/skills/pull/309),
+  [`38fcbc5`](https://github.com/Gharib89/skills/commit/38fcbc57869018b4602888a3f2be4cf991326189))
+
+### Breaking Changes
+
+- **ship**: Poll-pr drops --free-round, --review-on-push and the never_queued and degraded fields,
+  and gains not_reviewed.
+
+- The phase-7 exit vocabulary the Review line and cloud-ship relay changes from converged/degraded
+  to reviewed/not reviewed.
+
+
+## v8.9.0 (2026-09-25)
+
+### Features
+
+- **ship**: A measured 200-line small lane, reviewer probes from preflight, parallel phase 4
+  ([#300](https://github.com/Gharib89/skills/pull/300),
+  [`38daa3f`](https://github.com/Gharib89/skills/commit/38daa3f04531f861e93e67362f4d26564f23b0f2))
+
+
+## v8.8.0 (2026-09-25)
+
+### Features
+
+- **ship**: The Review line reports a Claude round's denied-call count
+  ([#294](https://github.com/Gharib89/skills/pull/294),
+  [`e5246b9`](https://github.com/Gharib89/skills/commit/e5246b91245f2f10f8ac5d42d7abe381bab2a2cd))
+
+
+## v8.7.0 (2026-09-25)
+
+### Features
+
+- **ship**: Update-issue-body lands a tracker-issue docs-sync target after the merge
+  ([#292](https://github.com/Gharib89/skills/pull/292),
+  [`bd47489`](https://github.com/Gharib89/skills/commit/bd47489c43b1d696750b3efdab14efa9d6f9450f))
+
+
+## v8.6.1 (2026-09-25)
+
+### Bug Fixes
+
+- **ship**: Trim the trailing space in host/ado.sh, and gate trailing whitespace
+  ([#290](https://github.com/Gharib89/skills/pull/290),
+  [`ea07543`](https://github.com/Gharib89/skills/commit/ea075437bb9e8941500c3d1eb59a838f8a9b27ee))
+
+
+## v8.6.0 (2026-09-24)
+
+### Features
+
+- **ship**: The free-round poll closes on never_queued when the host queued no round
+  ([#285](https://github.com/Gharib89/skills/pull/285),
+  [`e0f8813`](https://github.com/Gharib89/skills/commit/e0f8813e4882d18ccc13826b4067423d8463a1bc))
+
+
 ## v8.5.3 (2026-09-24)
 
 ### Refactoring

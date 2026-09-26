@@ -52,34 +52,52 @@
 # bound on what the run may add, so a `--timeout` past it is the caller's own
 # window, which the run then extends by nothing. A run that concluded successfully buys one more
 # interval for the row to appear; one that concluded any other way closes the
-# window there and then, whatever `--timeout` had left, carrying its URL, which
-# the review loop reads as `infra-error` rather than `silent`, or, where the
-# conclusion is `skipped`, as the workflow declining the comment. A run still live when the ceiling closes
-# is reported as it stands, status and URL, and reads as `infra-error` too: a
-# run that outlived the ceiling delivered nothing either. The run is reported on
-# `reviewer_run`: null where no run is awaited, `{status, conclusion, url}`
-# otherwise, with status `none` and the other two null where no run was created
+# window there and then, whatever `--timeout` had left, carrying its URL. A run
+# still live when the ceiling closes is reported as it stands, status and URL:
+# a run that outlived the ceiling delivered nothing either. The run is reported on
+# `reviewer_run`: null where no run is awaited, `{status, conclusion, url, denied}`
+# otherwise, with status `none` and the other three null where no run was created
 # at all, and the string
 # "unavailable" where the host could not answer the read, the way `threads`
 # reports one it could not read. An unavailable read leaves the window at the
-# constant and that reviewer's exit is `unreachable` rather than `silent`,
-# because a read that did not happen is no evidence about the reviewer. The run
+# constant. The run
 # read is keyed by `--since`, the request the run should follow. Which event
 # starts such a run is the host's word and the adapter's business: this
-# mechanic names the workflow file and the instant, and nothing else.
+# mechanic names the workflow file and the instant, and nothing else. `denied`
+# is the count of tool calls the round in a `completed` run was refused, read
+# once as the poll returns, for that run alone; it is null for a run still live
+# at the ceiling, where none was created, and where the host could not read the
+# count, which leaves the rest of the run read as it was. The job posts its
+# review before it raises the count, so a landed round whose run is still going
+# holds the window until the run completes, to the ceiling (#295). The count
+# never changes the verdict: the review loop carries it onto the Review line.
 #
 # `reviewer_blocked` is the awaited login's latest quota or rate-limit notice,
 # read from its review bodies as well as its PR comments: a reviewer states a
 # notice on either surface, and both are read. `refused_by` names the landing
 # rule that admitted a notice while no round landed: a review on the head, or a
 # review or PR comment at or after `--since`. That notice answers the request, no
-# round follows it, and the window closes on it at once with done=false, which
-# the review loop reads as `degraded: blocked` and requests nothing more. A
+# round follows it, and the window closes on it at once with done=false. A
 # notice the rule does not admit, an older request's or a comment under the head
-# rule, leaves the window to run as before. `threads` is "unavailable" when thread
-# state could not be read (on GitHub, GraphQL and the REST routes a refusing
-# proxy names both failed): that reviewer's exit is degraded unreachable, the
-# run proceeds.
+# rule, leaves the window to run as before.
+#
+# `not_reviewed` is the cause this poll observed for the awaited reviewer
+# delivering no round, which the review loop reports as `not reviewed: <cause>`
+# rather than naming one of its own. Null without --reviewer and where a
+# conflict closed the window, which says nothing about the reviewer. Otherwise,
+# first match wins:
+#   unreachable   `threads` is "unavailable" (on GitHub, GraphQL and the REST
+#                 routes a refusing proxy names both failed), a landed round's
+#                 included, since its threads can be neither read nor answered
+#   (null)        a round landed
+#   unreachable   `reviewer_run` is "unavailable": a read that did not happen is
+#                 no evidence about the reviewer
+#   blocked       `refused_by` is non-null
+#   never-queued  the awaited run's status is `none`, or its conclusion
+#                 `skipped`: the request landed and nothing ran for it
+#   infra-error   the awaited run concluded any other way but `success`, or was
+#                 still live at the ceiling
+#   silent        the window closed on its bound with nothing admitted
 #
 # `--brief` projects that same JSON, from the same single fetch, down to what a
 # review loop acts on: head, mergeable, `landed_by`, one row per reviewer round
@@ -90,16 +108,19 @@
 # --since rule and `on_head[]` under the head rule, the list that rule lands
 # from. Under `--reviewer` only the awaited reviewer's rows are kept, and the
 # run's own rows drop out: a thread reply of ours posts as a review
-# row of its own, and a convergence test that counts it reads its own voice as
-# the reviewer's. That drop needs the host identity, so `--brief` asks for it up
+# row of its own, and a round count that counts it reads its own voice as the
+# reviewer's. That drop needs the host identity, so `--brief` asks for it up
 # front and exits 2 when the host cannot answer, rather than returning a list it
 # cannot promise is the reviewer's alone. The full shape stays the default.
 #
 # stdout: {head_sha, mergeable, checks[], reviews: {on_head[], all[], total},
-#          threads, reviewer, reviewer_blocked, reviewer_run, landed_by, refused_by, done, waited_s}
-#   --brief: {head_sha, mergeable, reviewer, landed_by, refused_by, reviewer_blocked, reviewer_run,
-#             rounds[], threads}
-# exit: 0 done · 1 window closed first (done=false; re-run to extend) · 2 tooling
+#          threads, reviewer, reviewer_blocked, reviewer_run, landed_by, refused_by, not_reviewed,
+#          done, waited_s}
+#   --brief: {head_sha, mergeable, reviewer, landed_by, refused_by, not_reviewed, reviewer_blocked,
+#             reviewer_run, rounds[], threads}
+# exit: 0 done · 1 window closed first (done=false; `not_reviewed` names why no
+#       round landed, and null beside a landed round means only checks were still
+#       pending; the review loop takes either as the answer) · 2 tooling
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 # The hard bound on waiting a run out, written once: the usage line is where a
@@ -251,12 +272,41 @@ while :; do
       *) sleep "$interval"; continue ;;
     esac
   fi
+  # A landed round's run is still going: the job posts its review before its
+  # denial step raises the count, so the window stays open until the run ends,
+  # to the ceiling, and the count below is read from a completed run (#295).
+  if $done && [ "$landed" = true ] && [ "$mergeable" != conflict ] && [ "$waited" -lt "$ceiling" ]; then
+    case $run_status in ''|none|completed) ;; *) sleep "$interval"; continue ;; esac
+  fi
   if $done || $dead_run || [ "$waited" -ge "$timeout" ]; then
+    # Read here rather than per pass, so a poll that waited out the run reads
+    # its count once, and only the run it reports.
+    if [ "$run_status" = completed ]; then
+      denied=null
+      if denials=$(host_run_denials "$(jq -r .url <<<"$reviewer_run")"); then
+        # An answer that is not one object carrying a count is no count, like a
+        # read that failed, and keeps the `--argjson` below to one value.
+        denied=$(jq -cs 'if length == 1 then (.[0].denied? | numbers) // null else null end' \
+          <<<"$denials" 2>/dev/null) || denied=null
+        [ -n "$denied" ] || denied=null
+      fi
+      reviewer_run=$(jq -c --argjson d "$denied" '.denied = $d' <<<"$reviewer_run")
+    fi
     out=$(jq -n --arg sha "$sha" --arg m "$mergeable" --argjson c "$checks" --argjson r "$reviews" \
       --argjson t "$threads" --argjson rv "$reviewer" --argjson b "$blocked" --argjson rr "$reviewer_run" \
       --argjson lb "$landed_by" --argjson rf "$refused_by" --argjson d "$done" --argjson w "$waited" \
+      --arg aw "$await" \
       '{head_sha: $sha, mergeable: $m, checks: $c, reviews: $r, threads: $t, reviewer: $rv, reviewer_blocked: ($b.line? // null),
-        reviewer_run: $rr, landed_by: $lb, refused_by: $rf, done: $d, waited_s: $w}')
+        reviewer_run: $rr, landed_by: $lb, refused_by: $rf, done: $d, waited_s: $w}
+       | .not_reviewed = (
+           if $aw == "" or $m == "conflict" then null
+           elif $t == "unavailable" then "unreachable"
+           elif $lb != null then null
+           elif $rr == "unavailable" then "unreachable"
+           elif $rf != null then "blocked"
+           elif ($rr | type) == "object" and ($rr.status == "none" or $rr.conclusion == "skipped") then "never-queued"
+           elif ($rr | type) == "object" and $rr.conclusion != "success" then "infra-error"
+           else "silent" end)')
     if $brief; then
       key=on_head; [ -z "$since" ] || key=all
       ship_brief "$out" "$me" "$key" "$full"

@@ -57,6 +57,12 @@
 #   host_issue_comment <n> <body>        (fails with {status})
 #   host_issue_close <n>
 #   host_issue_create <title> <body-file> <label> -> {number,url}
+#   host_issue_body <n>                  -> {body} the body as markdown. On Azure DevOps, a
+#                                           description that is the one `<pre>` block
+#                                           host_issue_create writes, unwrapped; any other
+#                                           shape fails with {reason}.
+#   host_issue_set_body <n> <body-file>  (fails with {status}); on Azure DevOps, written as
+#                                           that one `<pre>` block.
 #   host_issues_open                     -> [{number,title,url}] every open issue, newest first,
 #                                           issues alone. Narrows only on Azure DevOps, where WIQL
 #                                           refuses a set past 20000 rows, and says so on stderr
@@ -117,6 +123,15 @@
 #                                           Azure DevOps, which has no such read. poll-pr reports
 #                                           either as "unavailable" and holds the window to the
 #                                           constant on.
+#   host_run_denials <run-url>           -> {denied} the count of tool calls the round in
+#                                           that completed run was refused: the leading
+#                                           numbers of its jobs' `claude-review` warning
+#                                           annotations, summed, 0 where none was raised.
+#                                           Non-zero where the host could not answer or a
+#                                           warning leads with no number; always non-zero and
+#                                           silent on Azure DevOps, which awaits no run.
+#                                           poll-pr reports a failure as a `denied` of null
+#                                           and leaves the run read standing.
 #   host_pr_request_review <pr> <login>  -> {requested,readback[],requested_at}
 #                                           readback: the host's own names for the PR's reviewers:
 #                                           logins on GitHub, each reviewer's uniqueName and
@@ -695,7 +710,8 @@ readonly SHIP_REFUSED_BY='
 # `waiting`, `pending`) hold the window the way `queued` does. The title is the
 # only link the host offers, so a PR renamed mid-poll matches nothing: the
 # adapter's own comment carries what that costs. `none` is the read finding
-# no run at all, which the review loop reads as never-queued.
+# no run at all, which poll-pr reports as never-queued. `denied` is null
+# here: poll-pr fills it from `host_run_denials` once, for a completed pick.
 # shellcheck disable=SC2034  # read by poll-pr
 readonly SHIP_REVIEWER_RUN='
   def live: .status != "completed";
@@ -704,7 +720,7 @@ readonly SHIP_REVIEWER_RUN='
      // ([$rows[] | select(.conclusion != "skipped")] | last)
      // ($rows | last)
      // {status: "none", conclusion: null, url: null})
-  | {status, conclusion, url}'
+  | {status, conclusion, url, denied: null}'
 
 # ship_fence_unclosed <text>: does the text end inside a fenced block? Prints
 # `line <n>: <run>` naming the opener still open, or nothing when the
@@ -952,12 +968,12 @@ ship_reviewer_by_name() {
 # land and a bound of a minute or two reports `silent` on a review still
 # coming, and 60 where a
 # comment is, since the run read then holds the window open for as long as a
-# round is being written, and a free round that starts no run is answered by
-# `reviewer_run.status: "none"` on the first pass. After a request the 60 is
-# the bound on the run's creation, not on the round: the host creates the
+# round is being written. A comment transport is only ever polled after its
+# request, so the 60 is the bound on the run's creation, not on the round: the
+# host creates the
 # `issue_comment` run within seconds of the comment, and from then on the run,
 # not the constant, holds the window. A backed-up queue that outlasts it reads
-# `never-queued`; a caller expecting one passes `--timeout`.
+# as no run, `never-queued`; a caller expecting one passes `--timeout`.
 #
 # `refusal` is null, or the line `poll-pr` exits 2 on, where the caller's
 # <since> disagrees with the rule: a --since for an on-push reviewer, or none for
@@ -1062,8 +1078,8 @@ ship_pr_state_reason() { # ship_pr_state_reason <state>
 # meaning.
 #
 # <identity> is the login the run posts as: its own thread replies land as review
-# rows of their own, and a convergence test that counts them reads its own voice
-# as the reviewer's. An empty <identity> drops nothing: a host that could not
+# rows of their own, and a round count that counts them reads its own voice as
+# the reviewer's. An empty <identity> drops nothing: a host that could not
 # name the run must not cost it the rounds it came for. The awaited reviewer's
 # login, `.reviewer.login`, narrows the rounds to its rows: under `--reviewer
 # claude` a Copilot quota notice is not a round of claude's (#255).
@@ -1084,7 +1100,7 @@ ship_pr_state_reason() { # ship_pr_state_reason <state>
 # it, cut at the same width: a run answers one thread off the brief, and a row
 # holding an id alone sent it back for the full shape to read what the finding
 # was. The string "unavailable" passes through as itself. `reviewer_run` passes
-# through whole, the string "unavailable" included: it is three fields, and a
+# through whole, the string "unavailable" included: it is four fields, and a
 # loop reading rounds from the brief is the loop that has to tell a silent
 # reviewer from one whose run is still going.
 ship_brief() {
@@ -1103,7 +1119,7 @@ ship_brief() {
         else ((([$lines[0]] + $items) | join("\n")) + $mark) end;
     def lead: [splits("\n") | select(test("^[ \t]*$") | not)] | (.[0] // "") | clip;
     (.reviewer.login // "") as $await
-    | {head_sha, mergeable, reviewer, landed_by, refused_by, reviewer_blocked, reviewer_run,
+    | {head_sha, mergeable, reviewer, landed_by, refused_by, not_reviewed, reviewer_blocked, reviewer_run,
      rounds: [.reviews[$key][] | select((mine | not) and awaited($await)) | . as $r
               | {id, submitted_at, substantive,
                  body: (if ($full | index($r.id | tostring)) then $r.body

@@ -7,6 +7,68 @@ released version. See
 
 <!-- version list -->
 
+## v6.0.0 (2026-09-25)
+
+### Features
+
+- **ship**: A narrower mechanic rule and a best-effort reviewer loop
+  ([#309](https://github.com/Gharib89/skills/pull/309),
+  [`38fcbc5`](https://github.com/Gharib89/skills/commit/38fcbc57869018b4602888a3f2be4cf991326189))
+
+### Breaking Changes
+
+- **ship**: Poll-pr drops --free-round, --review-on-push and the never_queued and degraded fields,
+  and gains not_reviewed.
+
+- The phase-7 exit vocabulary the Review line and cloud-ship relay changes from converged/degraded
+  to reviewed/not reviewed.
+
+
+## v5.9.0 (2026-09-25)
+
+### Features
+
+- **setup-skills**: Fail the gate on an unresolvable base, and gate the Claude reviewer on the PR
+  author ([#305](https://github.com/Gharib89/skills/pull/305),
+  [`093a7a6`](https://github.com/Gharib89/skills/commit/093a7a6afc53aca7b63bc7fdffa4f18d5083770d))
+
+
+## v5.8.0 (2026-09-25)
+
+### Features
+
+- **ship**: A measured 200-line small lane, reviewer probes from preflight, parallel phase 4
+  ([#300](https://github.com/Gharib89/skills/pull/300),
+  [`38daa3f`](https://github.com/Gharib89/skills/commit/38daa3f04531f861e93e67362f4d26564f23b0f2))
+
+
+## v5.7.0 (2026-09-25)
+
+### Features
+
+- **setup-skills**: The Claude reviewer prompt names the Bash shapes its allowlist refuses
+  ([#296](https://github.com/Gharib89/skills/pull/296),
+  [`527ee4c`](https://github.com/Gharib89/skills/commit/527ee4c962de749abdcf89a3b9b53fb3ec0f08ba))
+
+
+## v5.6.0 (2026-09-25)
+
+### Features
+
+- **ship**: Update-issue-body lands a tracker-issue docs-sync target after the merge
+  ([#292](https://github.com/Gharib89/skills/pull/292),
+  [`bd47489`](https://github.com/Gharib89/skills/commit/bd47489c43b1d696750b3efdab14efa9d6f9450f))
+
+
+## v5.5.0 (2026-09-24)
+
+### Features
+
+- **setup-skills**: The Claude reviewer reads a saved diff and the PR head's copy of a changed file
+  ([#287](https://github.com/Gharib89/skills/pull/287),
+  [`c169357`](https://github.com/Gharib89/skills/commit/c169357164d5a1febd10afaeb830cb4dfc6f9ef6))
+
+
 ## v5.4.0 (2026-09-24)
 
 ### Features

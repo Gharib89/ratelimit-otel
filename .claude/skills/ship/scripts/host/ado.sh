@@ -66,7 +66,7 @@ host_identity() {
   local id
   id=$(az account show --query user.name -o tsv 2>/dev/null) && [ -n "$id" ] && { printf '%s' "$id"; return 0; }
   invoke GET core connectionData 7.1 --query 'authenticatedUser.properties.Account.$value' -o tsv 2>/dev/null \
-    | tr -d '"' | grep . 
+    | tr -d '"' | grep .
 }
 # No cheap, reliable push probe exists on ADO without a security-namespace
 # walk; preflight reports unknown and the merge tells.
@@ -144,6 +144,23 @@ host_issue_comment() { azx boards work-item update "${ORG[@]}" --id "$1" --discu
 host_issue_close()   { azx boards work-item update "${ORG[@]}" --id "$1" --state "$ADO_CLOSED" >/dev/null; }
 # Markdown body goes in as preformatted HTML: the description field is HTML.
 _html_pre() { jq -Rs '"<pre>" + (. | gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;")) + "</pre>"' -r "$1"; }
+# The inverse, for a description that is exactly one such block: no raw `<`
+# between the tags, since _html_pre escapes every one. The lab's sanitizer hands
+# a `_html_pre` write back with `"` as &quot; and U+00A0 as &nbsp; too (probed
+# on #289), so those decode as well, and &amp; last, so each decodes once. Any
+# other shape is HTML ship did not write, which nothing here edits. The anchors
+# are \A and \z because Oniguruma's `$` also matches before a final newline,
+# which let `<pre>x</pre>\n` through to a slice that then cut the wrong bytes.
+host_issue_body() {
+  local out
+  out=$(host_issue_get "$1" | jq '.body | if . == "" or test("\\A<pre>[^<]*</pre>\\z")
+    then {body: (.[5:-6] | gsub("&lt;"; "<") | gsub("&gt;"; ">") | gsub("&quot;"; "\"")
+                         | gsub("&nbsp;"; "\u00a0") | gsub("&amp;"; "&"))}
+    else {reason: "the description is not the one <pre> block ship writes, and no HTML is edited"} end') || return 1
+  printf '%s\n' "$out"
+  jq -e 'has("body")' <<<"$out" >/dev/null
+}
+host_issue_set_body() { azx boards work-item update "${ORG[@]}" --id "$1" --description "$(_html_pre "$2")" >/dev/null; }
 host_issue_create() { # <title> <body-file> <label>
   local out
   out=$(azx boards work-item create "${PRJ[@]}" --type "$ADO_WIT" --title "$1" --description "$(_html_pre "$2")" \
@@ -392,6 +409,8 @@ host_issues_ready() { # <label>
 # "this host has no such read", the answer every read the host lacks gives, and
 # `poll-pr` then holds its window to the constant.
 host_workflow_runs() { return 1; } # <workflow-file> <since-iso>
+# With no awaited run there is no run whose denied calls to count.
+host_run_denials() { return 1; } # <run-url>
 
 # Azure DevOps has no Copilot-review ruleset, so there is nothing to contradict
 # a profile with. Non-zero and silent is "not checked", the same answer the
