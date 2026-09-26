@@ -85,11 +85,12 @@ async function sampleAndDeliver($: EngineInterface): Promise<void> {
   const payload = buildPayload(usage, identity, now, account);
   if (payload === undefined) return;
 
-  // A refused connection is measured, not hypothetical: a cloud sandbox's egress
-  // proxy resets this host before TLS (ADR-0003's amendment). It is caught here
-  // because an uncaught rejection would surface the dead endpoint as a skipped
-  // hook on every sample on every seat the console policy does not reach, which
-  // is the one thing ADR-0004 says this failure must not do.
+  // A refused connection is measured, not hypothetical: a cloud environment whose
+  // network allowlist leaves out the collector host refuses it (ADR-0003's
+  // 2026-09-24 amendment). It is caught here because an uncaught rejection would
+  // surface the dead endpoint as a skipped hook on every sample on every seat the
+  // console policy does not reach, which is the one thing ADR-0004 says this
+  // failure must not do.
   const response = await $.http
     .fetch(`${endpoint}/v1/metrics`, {
       method: "POST",
