@@ -1,8 +1,8 @@
 # ADR-0003: Sample every session, including CI, and fall back for identity
 
-Status: accepted, 2026-09-21; amended 2026-09-21, 2026-09-22 and 2026-09-24 (see the Amendments)
+Status: accepted, 2026-09-21; amended 2026-09-21, 2026-09-22 and twice on 2026-09-24 (see the Amendments)
 Resolves: CONTEXT.md open decision 3 (whether to sample on CI and cloud sessions)
-Superseded in part: its sampling triggers and delivery floor, and the 2026-09-22 amendment's floor waiver, by [ADR-0005](0005-deliver-on-movement.md). Sampling every session and the identity ladder stand.
+Superseded in part: its sampling triggers and delivery floor, and the 2026-09-22 amendment's floor waiver, by [ADR-0005](0005-deliver-on-movement.md); the 2026-09-21 amendment, by the second amendment of 2026-09-24. Sampling every session and the identity ladder stand.
 
 ## Context
 
@@ -33,6 +33,9 @@ CI rows arrive with no `user.email` and are attributable only to the account. Th
 `staging.stg_utilization_segments` joins the two metrics on `(user_email, usage_window, ts)` with no session key, so two concurrent sessions for one account emitting in the same second fan the join out. That defect is cc-otel's to fix and is not worked around here. `session.id` is emitted on every datapoint's resource so the fix has a key available the day it is written.
 
 ## Amendment, 2026-09-21: a cloud sandbox is unreachable
+
+Superseded by the amendment of 2026-09-24, "a cloud session delivers where its
+environment's network reaches the collector". Kept as the record of what was measured then.
 
 The decision above does not change. Its scope does: of the two non-interactive
 environments the Context names, a **cloud sandbox cannot reach the collector at
@@ -141,3 +144,58 @@ Rung 1 therefore resolves the directory the same way, `CLAUDE_CONFIG_DIR`, then
 `HOME`, then `USERPROFILE`, and reads `.claude.json` there. That is also how the
 wrapper locates it (`CLAUDE_CONFIG_DIR`, else `os.homedir()`), so the Decision's
 "same ladder the wrapper has" holds again.
+
+## Amendment, 2026-09-24: a cloud session delivers where its environment's network reaches the collector
+
+This supersedes the 2026-09-21 amendment. The decision above still does not change,
+and a cloud sandbox is back inside its scope: it samples like any other session and
+delivers, **on two conditions**, both measured rather than inferred:
+
+1. **The plugin is installed by the cloud environment's setup script.** Nothing else
+   installs it there (the second trap below).
+2. **The collector host is reachable from the environment's network.** An allowlist
+   that leaves it out refuses the plugin and Claude Code's own exporter alike.
+
+The evidence, all in prod `raw.metrics`, so a later reader can re-run the check
+against it:
+
+- A routine fire in the Default environment, Claude Code 2.1.281, installed the
+  plugin at user scope with `claude plugin marketplace add Gharib89/ratelimit-otel`
+  and `claude plugin install ratelimit-otel@ratelimit-otel`, then ran two nested
+  `claude -p` sessions. Scope `cc-otel.plugin` holds 8 rows from session
+  `5887db8b-e5d0-5666-8b09-57bc3dd67fc5` (a UUIDv5, the cloud shape; its Claude Code
+  rows carry `terminal_type = linux`, not the `non-interactive` the Context above
+  expects), at 17:54:59 and 17:55:10 UTC: both metrics
+  for `5h` and `7d`, `metric_type = gauge`, `value_kind = gauge_last`, `user_email`
+  present. The same day, 8 cloud sessions landed about 5,400 rows from Claude
+  Code's own exporter (`com.anthropic.claude_code`) through the console env block's
+  endpoint.
+- At 18:08 UTC all four cloud environments ran the same two commands in their setup
+  script, and one routine fire each, with no nested `claude -p`, listed the plugin
+  at 0.5.1, enabled. Default (session `9fab22a3-…`) and Full access (`7a33712e-…`)
+  each landed 4 `cc-otel.plugin` rows of the same shape. cc-otel and crm-ship landed
+  nothing, and neither did Claude Code's own exporter there: the gap was those
+  environments' network, not the plugin.
+- At 18:21 UTC the collector host was added to the cc-otel and crm-ship network
+  allowlists, and one more fire each delivered: sessions `87104006-…` and
+  `a266d82d-…` each landed 4 `cc-otel.plugin` rows (gauge/gauge_last, `5h` and `7d`,
+  `user_email` set) plus 12 Claude Code rows. All four environments deliver.
+
+What changed since the 2026-09-21 curl is not recorded here, and nothing in the
+plugin did: the transport is the one [ADR-0004](0004-transport-reads-the-console-env-block.md)
+fixes. The `.catch` on the POST stays, because an environment whose network leaves
+the collector out is still a dead endpoint that must fail quietly.
+
+Two traps, each of which reads as the opposite of what holds:
+
+- **An unset `OTEL_EXPORTER_OTLP_ENDPOINT` in the sandbox shell is not ADR-0004's
+  `no endpoint means no send` path.** A routine's Bash has the variable unset, yet
+  the plugin's `$.env.get` reads it and the POST lands: Claude Code applies the
+  console env block inside its own process, not to the shell it spawns.
+- **Nothing installs the plugin in a cloud session by default.** The console's
+  `enabledPlugins` entry does not reach it, and a project `.claude/settings.json`
+  declaring `extraKnownMarketplaces` is not honoured either: the session logs
+  `Skipping orphaned enabledPlugins entry ratelimit-otel@ratelimit-otel: marketplace
+  not registered` and `installPluginsForHeadless: no marketplaces declared` (tried
+  in bf4c9e6, reverted in 54ffbbd). The route that works is the two install commands
+  above in the environment's setup script, which finishes before Claude Code starts.
