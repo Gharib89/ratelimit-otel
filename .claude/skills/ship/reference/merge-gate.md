@@ -5,6 +5,7 @@
 - [The summary](#the-summary)
 - [A tracker issue on Targets:](#a-tracker-issue-on-targets)
 - [Attended: post, then wait](#attended-post-then-wait)
+- [Filing a Ship defect](#filing-a-ship-defect)
 - [Unattended: post to the PR, then return](#unattended-post-to-the-pr-then-return)
 
 The one guaranteed human stop. Your job is to make the call a ten-second yes or
@@ -58,12 +59,14 @@ Tracker:     <none | one block per drafted section:>
   (unattended: the command a human runs after merging, per the tracker section)
 CI:          <leg> → <green | state> · ...     (from the profile's Legs:)
 Issues filed: <#n <title>, ... | none>  ·  linked: <#n <title>, ... | none>
-Ship defects: <none | one line per defect:>
+Ship defects: <none | one block per defect:>
   - <missing write, missing gating read, or wrong prose> (phase <n>)
+    draft for Gharib89/skills: <title> · <draft path>
 Direct reads: <none | <call> · <why>, ...>     (from the Run file's ## Direct reads)
 Timing:      <`run-file timing`'s `row`, verbatim>
 
 Ready to merge. Reply "merge" to squash-merge, close the issue, and clean up.
+(with a Ship defect draft: Reply "file defects" to file the drafts at Gharib89/skills.)
 ```
 
 **Every row is grounded in a result from this run**: `Local gate:` is the
@@ -77,8 +80,16 @@ reason phase 6 wrote into the PR body, one of the three
 to a tool result for is written `unverified`. `Ship defects:` lists every host
 write or gating read no mechanic performs, and prose that promised what a
 mechanic does not do; an informational read made directly goes on `Direct
-reads:` instead. The run files a defect to no other repo; the human carries the
-row upstream.
+reads:` instead. Each defect carries a **drafted issue** for the source repo,
+`Gharib89/skills`, written to `<scratchpad>/ship-<issue>/defect-<k>.md` when it
+is met: a title, then a body naming Ship's version, the mechanic or prose at
+fault and what the run did instead, and no organization identifier, credential
+or client context, because the source repo is public. A gap in the ship profile
+rather than in Ship is a **profile defect**: an adjacent find of this repo,
+filed here through phase 2's dispositions and listed under `Issues filed`, not
+on this row. Where this repo is the source repo, a Ship defect is an adjacent
+find already (its profile's `## Triage`) and the row names its number instead of
+a draft.
 
 **Counts are measurements; tallies are records.** A count that measures the
 tree, here or in the PR body, carries the command that produced it, run on the
@@ -121,12 +132,12 @@ section, because `update-issue-body` replaces nothing smaller.
 A drafted section is written after the merge and never before, so no issue
 records code that has not landed: once `merge` answers `merged: true`, and
 before `cleanup`, run `update-issue-body <n> --section "<section>" --body-file
-<draft>` per draft, `<section>` verbatim from the heading `read-issue` returned.
+<draft>` per tracker draft, `<section>` verbatim from the heading `read-issue` returned.
 Re-read the issue first: a section that no longer matches its base is
 redrafted, posted, and written on the human's explicit "yes". `created: true`
 for a section the draft meant to replace means the name missed: re-run with the
 returned heading, and name the stray section as a Ship defect. Exit 1 means
-nothing was written: a Ship defect for the summary, with the draft attached.
+nothing was written: a Ship defect for the summary, with the tracker draft attached.
 
 The unattended lane runs no merge, so under each draft the summary gives the
 command a human runs after merging, from a file they save the draft to,
@@ -155,10 +166,25 @@ removes the worktree and force-deletes the local branch.
 work: apply it on the same branch, re-run the local gate, come back to this
 gate. Do not re-open the whole pipeline.
 
+## Filing a Ship defect
+
+A Ship defect draft reaches the source repo on the human's word alone ([ADR 0004](https://github.com/Gharib89/skills/blob/main/docs/adr/0004-cross-repo-writes-reach-the-source-repo-on-the-humans-word.md)),
+and "merge" is not that word: it approves the PR, not publishing the run's
+context to a public repo. On "file defects", or a word naming one draft, run
+`file-issue --repo Gharib89/skills --title "<title>" --body-file <draft> --label
+needs-triage` per Ship defect draft and put its answer on the row: the number filed, the
+candidates it answered with instead, each read the way phase 2 reads one, or,
+on exit 1 with a `command`, that command verbatim for the human to run where
+the write succeeds. Before or after the merge, either order holds.
+
 ## Unattended: post to the PR, then return
 
 `comment-pr <pr> --body-file` with the summary, then **return** with the PR
 link. Do not wait, poll, or merge; the claim stays on the issue, which carries
 the open PR, so later fires skip it until a human merges. The last line becomes
-"Ready to merge: a human merges from the PR." Detail in
+"Ready to merge: a human merges from the PR." A Ship defect's draft is never
+filed from here, and the comment drops the "file defects" line: it carries each
+draft verbatim under the command a human runs from a file they save it to,
+`.claude/skills/ship/scripts/file-issue.sh --repo Gharib89/skills --title
+"<title>" --body-file <file> --label needs-triage`. Detail in
 [unattended.md](unattended.md).

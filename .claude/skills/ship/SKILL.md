@@ -6,9 +6,9 @@ description: >-
   unattended lane.
 argument-hint: "[issue-number] [--unattended]"
 metadata:
-  version: 9.0.1
+  version: 11.0.0
   profile-schema: 3
-  composes: mattpocock/skills:tdd mattpocock/skills:writing-for-agents mattpocock/skills:code-review upstash/context7:find-docs humanlayer/skills:show-me
+  composes: mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:tdd mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:writing-for-agents mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:code-review upstash/context7#e275a848a420e0d11c2822f61201ee005bfd1133:find-docs humanlayer/skills#ca7c8088db69e315a8b2deea43820270457f8f3c:show-me
 ---
 
 # ship
@@ -60,8 +60,9 @@ when their moment comes, taking each one's logic from the skill itself, and tell
 any composed skill with an unattended mode that the run is unattended,
 explicitly, because it has no other way to know. **Read** `show-me` (phase 6,
 the Change outline) instead; [pr-body.md](reference/pr-body.md) says why. The
-frontmatter's `composes` line names all five with each one's source repo, and is
-what phase 0 checks: a skill added here is added there too.
+frontmatter's `composes` line names all five, each pinned at the upstream commit
+ship was tested against (`<owner>/<repo>#<sha>:<skill>`), and is what phase 0
+checks: a skill added here is added there too.
 
 ## The pipeline
 
@@ -76,8 +77,8 @@ once its `Done when:` holds, not before.
 **A phase runs the mechanic it names**, rather than re-deriving what that
 mechanic wraps. **Every host write, and every gating read, goes through a
 mechanic**: one no mechanic performs is a **Ship defect** for the merge
-summary's `Ship defects:` row, not a hand-rolled call or an issue filed to
-another repo. [reference/mechanics.md](reference/mechanics.md) carries the rule
+summary's `Ship defects:` row, never a hand-rolled call; merge-gate.md says
+where its draft goes. [reference/mechanics.md](reference/mechanics.md) carries the rule
 in full, the informational reads it admits, the mechanic each phase runs and the
 contract they share, `--help` included.
 
@@ -227,12 +228,14 @@ the summary's shape, what `merge` does, its two refusals and the tracker drafts.
 **Hard stop.** Write the summary per that file, uncompressed. Attended: post it
 in the conversation and wait for an explicit "merge": the word is exact, and a
 near miss is asked back. On approval run `merge <pr> <issue|none> [--worktree
-<path>]`, `update-issue-body` per draft, then `cleanup <issue|none>`; a nonzero
+<path>]`, `update-issue-body` per tracker draft, then `cleanup <issue|none>`,
+and a Ship defect draft is filed only on a word of its own; a nonzero
 exit, or a `false` in `merge`'s or `cleanup`'s JSON, re-runs the mechanic that
 owns the step, and a step no mechanic re-does is a Ship defect for the summary.
 Unattended: `comment-pr <pr> --body-file` with the summary, and return.
 **Done when:** attended, `merge`, every `update-issue-body` and `cleanup` exited
-0 with no `false`; unattended, `comment-pr` posted and the run returned the PR
+0 with no `false`, and every Ship defect draft is filed, answered with
+candidates, carries its `command` on the row, or was declined; unattended, `comment-pr` posted and the run returned the PR
 link.
 
 ## The stops
@@ -255,7 +258,7 @@ hold around that:
 | Stop | Reason | Claim |
 |---|---|---|
 | Profile missing or invalid, host unreachable | `profile missing`, `profile invalid: <detail>`, `host-unreachable` | no claim |
-| A skill ship composes is not installed | `skill missing: <skill>; run <install line>` | no claim |
+| A skill ship composes is not installed at its pin, or its pin is malformed | `skill missing: <skill>; run <install line>`, `skill off pin: <skill> at <ref>, pinned <sha>; run <install line>`, `skills lock unreadable: skills-lock.json; repair it, then re-run preflight`, `composes pin invalid: <entry>; want <form>` | no claim |
 | Preflight not actionable | `closed`, `is a pull request`, `already claimed`, `existing PR`, `existing branch`, `worktree exists`, `not triaged: run /triage first`, `ready-for-human: attended only` | no claim |
 | Issue too vague to plan | `ambiguous` | no claim |
 | Change outgrows one PR, or needs a redesign the issue did not scope | `needs-split` | attended: ask; unattended: hand back |

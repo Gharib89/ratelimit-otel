@@ -172,7 +172,8 @@ readonly SHIP_CLAIM_COMMENT='🤖 Claimed by a ship run: implementation in progr
 # ship_tooling <msg>: the exit-2 shape. Also used when the host adapter itself
 # cannot load, so a broken install still emits the contract, not "command not found".
 ship_tooling() { jq -n --arg e "$1" '{error: $e}'; exit 2; }
-ship_fail()    { jq -n --arg e "$1" '{error: $e}'; exit 1; }
+# SHIP_BY_HAND, set by ship_reach_repo, rides every exit-1 answer as `command`.
+ship_fail()    { jq -n --arg e "$1" --arg c "${SHIP_BY_HAND:-}" '{error: $e} + if $c == "" then {} else {command: $c} end'; exit 1; }
 
 # ship_fail_host <msg> <adapter-answer>: the exit-1 shape for a host write that
 # failed, carrying the HTTP status of the last attempt. Without it a host that
@@ -186,7 +187,8 @@ ship_fail_host() { # ship_fail_host <msg> <adapter-answer>
   local s
   s=$(jq -r 'if (.status | type) == "number" then .status else "null" end' <<<"${2:-}" 2>/dev/null) || s=null
   [ -n "$s" ] || s=null
-  jq -n --arg e "$1" --argjson s "$s" '{error: $e, status: $s}'
+  jq -n --arg e "$1" --argjson s "$s" --arg c "${SHIP_BY_HAND:-}" \
+    '{error: $e, status: $s} + if $c == "" then {} else {command: $c} end'
   exit 1
 }
 
@@ -290,12 +292,40 @@ ship_detect_host() {
   export SHIP_HOST SHIP_OWNER SHIP_REPO SHIP_REPO_SLUG SHIP_ORG SHIP_PROJECT SHIP_ORG_URL
 }
 
-# ship_load_host: detect and source the adapter, or exit 2 with the contract.
+# ship_load_host [<owner>/<repo>]: detect and source the adapter, or exit 2 with
+# the contract. With a repo, the host is GitHub at that repo whatever the origin
+# names: the source repo, which a consumer on any host files a Ship defect to
+# (ADR 0004).
 ship_load_host() {
-  ship_detect_host || ship_tooling "cannot derive the host from the origin remote"
+  if [ -n "${1:-}" ]; then
+    SHIP_HOST=github SHIP_OWNER=${1%%/*} SHIP_REPO=${1#*/} SHIP_REPO_SLUG=$1
+    export SHIP_HOST SHIP_OWNER SHIP_REPO SHIP_REPO_SLUG
+  else
+    ship_detect_host || ship_tooling "cannot derive the host from the origin remote"
+  fi
   # shellcheck source=/dev/null
   source "${SHIP_HOST_ADAPTER:-$SHIP_SCRIPTS/host/$SHIP_HOST.sh}" \
     || ship_tooling "cannot load host adapter ${SHIP_HOST_ADAPTER:-$SHIP_HOST}"
+}
+
+# ship_repo_arg <value>: whether a --repo value is `<owner>/<repo>`. The slug
+# lands in a REST path, so an owner is GitHub's alphanumerics and inner hyphens,
+# and a repo name that is all dots is a traversal, not a name.
+ship_repo_arg() {
+  [[ ${1:-} =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$ ]] || return 1
+  case ${1#*/} in .|..) return 1 ;; esac
+}
+
+# ship_reach_repo <repo> <mechanic-path> <args...>: under --repo, prove the
+# named repo's host answers before any read or write, and make every exit 1
+# after it carry the invocation that performs the write, shell-quoted, as
+# `command`, for the human to run where it succeeds. An Azure DevOps run carries
+# no GitHub credentials, and a token that authenticates can still be refused the
+# write; either way the write is still the human's to make.
+ship_reach_repo() {
+  local repo=$1; shift
+  SHIP_BY_HAND=$(printf '%q ' "$@"); SHIP_BY_HAND=${SHIP_BY_HAND% }
+  host_identity >/dev/null 2>&1 || ship_fail "$repo is unreachable from here"
 }
 
 # Triage roles are canonical names; the label strings a repo actually uses live
@@ -321,25 +351,49 @@ ship_frontmatter() {
 
 # ship_missing_skill_reasons <root> <composes>: the skills ship loads through
 # the Skill tool, checked against a checkout before the claim. <composes> is
-# ship's `metadata.composes` line: space-separated `<source-repo>:<skill>`
-# entries, the single place the list lives. Prints one reason per skill whose
-# `<root>/.claude/skills/<skill>/SKILL.md` is absent, carrying the line that
-# installs it; prints nothing when every one is there.
+# ship's `metadata.composes` line: space-separated `<source-repo>#<sha>:<skill>`
+# entries, the single place the list lives, each pinned at the upstream commit
+# the source repo tested. Prints one reason per entry whose pin is not a 40-hex
+# sha, one per skill whose `<root>/.claude/skills/<skill>/SKILL.md` is absent,
+# and one per present skill `<root>/skills-lock.json` records at another `ref`
+# or none, each of the last two carrying the pinned line that installs it;
+# prints nothing when every one is well pinned, there and at its pin. An absent
+# lock records no ref, so every copy reads as off its pin; a lock that is not one
+# JSON object prints one `skills lock unreadable` reason and nothing else.
 #
 # Only the consumer repo's own `.claude/skills` counts: a global copy under
 # ~/.claude/skills is a personal skill rather than this repo's derived copy, per
 # setup-skills.
 ship_missing_skill_reasons() {
-  local root=$1 entry source skill
+  local root=$1 entry source skill ref lock='{}' pin='^[^/#:]+/[^/#:]+#[0-9a-f]{40}$'
   local -a entries
+  # Every install line below rewrites the lock, and the CLI reads one it cannot
+  # parse as empty, erasing every other entry: such a lock gets no install line.
+  if [ -e "$root/skills-lock.json" ]; then
+    lock=$(jq -cs 'if length == 1 and (.[0] | type) == "object" then .[0] else error end' \
+      "$root/skills-lock.json" 2>/dev/null) || {
+      echo 'skills lock unreadable: skills-lock.json; repair it, then re-run preflight'
+      return 0
+    }
+  fi
   # read -ra, not an unquoted expansion: the split on spaces is intentional and
   # explicit, and a glob character in an entry stays a literal character.
   read -ra entries <<<"$2"
   for entry in ${entries[@]+"${entries[@]}"}; do
     source=${entry%%:*}; skill=${entry##*:}
-    [ -f "$root/.claude/skills/$skill/SKILL.md" ] && continue
-    printf 'skill missing: %s; run npx skills add %s --skill %s --agent claude-code -y\n' \
-      "$skill" "$source" "$skill"
+    if ! [[ $source =~ $pin ]]; then
+      printf 'composes pin invalid: %s; want <owner>/<repo>#<40-hex sha>:<skill>\n' "$entry"
+      continue
+    fi
+    if ! [ -f "$root/.claude/skills/$skill/SKILL.md" ]; then
+      printf 'skill missing: %s; run npx skills add %s --skill %s --agent claude-code -y\n' \
+        "$skill" "$source" "$skill"
+      continue
+    fi
+    ref=$(jq -r --arg k "$skill" '(.skills[$k]?.ref? | select(type == "string" and . != "")) // "none"' <<<"$lock")
+    [ "$ref" = "${source#*#}" ] && continue
+    printf 'skill off pin: %s at %s, pinned %s; run npx skills add %s --skill %s --agent claude-code -y\n' \
+      "$skill" "$ref" "${source#*#}" "$source" "$skill"
   done
 }
 

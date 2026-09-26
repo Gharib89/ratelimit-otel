@@ -13,7 +13,8 @@ the unproven check in the merge summary.
 
 It also cross-checks `## Host` against the remote, validates the profile,
 confirms every skill on ship's `composes` line is installed under this
-checkout's `.claude/skills/`, and prunes worktrees whose PR is merged or closed.
+checkout's `.claude/skills/` at its pinned ref, as `skills-lock.json` records
+the installed one, and prunes worktrees whose PR is merged or closed.
 
 ## Admission
 
