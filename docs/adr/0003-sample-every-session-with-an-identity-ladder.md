@@ -2,7 +2,7 @@
 
 Status: accepted, 2026-09-21; amended 2026-09-21, 2026-09-22 and twice on 2026-09-24 (see the Amendments)
 Resolves: CONTEXT.md open decision 3 (whether to sample on CI and cloud sessions)
-Superseded in part: its sampling triggers and delivery floor, and the 2026-09-22 amendment's floor waiver, by [ADR-0005](0005-deliver-on-movement.md). Sampling every session and the identity ladder stand.
+Superseded in part: its sampling triggers and delivery floor, and the 2026-09-22 amendment's floor waiver, by [ADR-0005](0005-deliver-on-movement.md); the 2026-09-21 amendment, by the second amendment of 2026-09-24. Sampling every session and the identity ladder stand.
 
 ## Context
 
@@ -35,7 +35,7 @@ CI rows arrive with no `user.email` and are attributable only to the account. Th
 ## Amendment, 2026-09-21: a cloud sandbox is unreachable
 
 Superseded by the amendment of 2026-09-24, "a cloud session delivers where its
-environment reaches the collector". Kept as the record of what was measured then.
+environment's network reaches the collector". Kept as the record of what was measured then.
 
 The decision above does not change. Its scope does: of the two non-interactive
 environments the Context names, a **cloud sandbox cannot reach the collector at
@@ -145,7 +145,7 @@ Rung 1 therefore resolves the directory the same way, `CLAUDE_CONFIG_DIR`, then
 wrapper locates it (`CLAUDE_CONFIG_DIR`, else `os.homedir()`), so the Decision's
 "same ladder the wrapper has" holds again.
 
-## Amendment, 2026-09-24: a cloud session delivers where its environment reaches the collector
+## Amendment, 2026-09-24: a cloud session delivers where its environment's network reaches the collector
 
 This supersedes the 2026-09-21 amendment. The decision above still does not change,
 and a cloud sandbox is back inside its scope: it samples like any other session and
@@ -167,7 +167,7 @@ against it:
   rows carry `terminal_type = linux`, not the `non-interactive` the Context above
   expects), at 17:54:59 and 17:55:10 UTC: both metrics
   for `5h` and `7d`, `metric_type = gauge`, `value_kind = gauge_last`, `user_email`
-  present. The same morning, 8 cloud sessions landed about 5,400 rows from Claude
+  present. The same day, 8 cloud sessions landed about 5,400 rows from Claude
   Code's own exporter (`com.anthropic.claude_code`) through the console env block's
   endpoint.
 - At 18:08 UTC all four cloud environments ran the same two commands in their setup
@@ -177,7 +177,7 @@ against it:
   nothing, and neither did Claude Code's own exporter there: the gap was those
   environments' network, not the plugin.
 - At 18:21 UTC the collector host was added to the cc-otel and crm-ship network
-  allowlists, and one more fire each delivered: session `87104006-…` and
+  allowlists, and one more fire each delivered: sessions `87104006-…` and
   `a266d82d-…` each landed 4 `cc-otel.plugin` rows (gauge/gauge_last, `5h` and `7d`,
   `user_email` set) plus 12 Claude Code rows. All four environments deliver.
 
