@@ -29,7 +29,8 @@
 #   closed · is a pull request · already claimed · existing PR · existing branch
 #   · worktree exists · not triaged: run /triage first · ready-for-human:
 #   attended only · profile missing · profile invalid: <detail> · skill missing:
-#   <detail>
+#   <detail> · skill off pin: <detail> · skills lock unreadable: <detail> ·
+#   composes pin invalid: <detail>
 #   mentions[] lists live PRs that name the issue without closing it: context
 #   for phase 1, and no kind of stop. mentioned_by[] is the same rows widened to
 #   {number, kind: issue|pr, state}, so a run learns whether a mention is an
@@ -146,7 +147,7 @@ else
 fi
 
 # The skills ship loads through the Skill tool, from ship's own frontmatter:
-# nothing else proves they are installed, so without this a run claims the
+# nothing else proves they are installed at their pins, so without this a run claims the
 # issue and only discovers the absence at the phase that needs the skill.
 # A read loop, not mapfile: the mechanics run wherever a consumer repo does,
 # including macOS's Bash 3.2, where mapfile is not a builtin and, with no

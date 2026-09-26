@@ -7,6 +7,41 @@ released version. See
 
 <!-- version list -->
 
+## v8.0.0 (2026-09-26)
+
+### Bug Fixes
+
+- **ship**: Move show-me to ca7c808 ([#319](https://github.com/Gharib89/skills/pull/319),
+  [`33061b2`](https://github.com/Gharib89/skills/commit/33061b21f99791ae686b005f3055995d174f2537))
+
+### Breaking Changes
+
+- **ship**: Preflight refuses a consumer whose show-me is still at 6ab9013; refresh it at ca7c808.
+
+
+## v7.1.0 (2026-09-26)
+
+### Features
+
+- **update-skills**: Refresh skills at pinned refs, report upstream drift, summarise in one PR
+  ([#318](https://github.com/Gharib89/skills/pull/318),
+  [`232fae5`](https://github.com/Gharib89/skills/commit/232fae52afd8369053e6555cc5ce543d5dad83aa))
+
+
+## v7.0.0 (2026-09-26)
+
+### Features
+
+- **ship**: Pin composed skills and route Ship defects to the source repo
+  ([#316](https://github.com/Gharib89/skills/pull/316),
+  [`34c2c35`](https://github.com/Gharib89/skills/commit/34c2c35bb8f03e52a9ffbafb25734eea1f1df46e))
+
+### Breaking Changes
+
+- **ship**: Ship's metadata.composes entries are <owner>/<repo>#<sha>:<skill>; a consumer's composed
+  skills are refreshed at those pins.
+
+
 ## v6.0.0 (2026-09-25)
 
 ### Features

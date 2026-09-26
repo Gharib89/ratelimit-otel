@@ -37,7 +37,7 @@ local-gate contract.
 | `read-issue` | 0 |
 | `isolate` | 0 |
 | `manage-issue` | 1; any stop after the claim; 3, to close a scratch issue a verification created; 9 |
-| `file-issue` | 2, 4, 7 |
+| `file-issue` | 2, 4, 7; 9 with `--repo`, per Ship defect draft, on the human's word |
 | `base-fresh` | 5, and after every conflict resolution |
 | `<Location:>` from the profile `[--small <node>] [--base <ref>]` | 5 (the repo's own local gate) |
 | `open-pr` | 6 |
@@ -78,7 +78,10 @@ host's `status` beside its `error`: a 5xx or 429 outlasted the mechanic's own
 backoff, so retrying is the fix; any other number is the request itself, so read
 the body you sent; `null` is no HTTP answer at all, so look at the host or the
 tooling in between. `open-pr` and `file-issue` answer with the error alone, and
-their stderr carries the host's message.
+their stderr carries the host's message. Under `--repo`, every exit 1 of `file-issue` and
+`update-issue-body`, an unreachable host's or a refused write's, carries a
+`command` beside the `error`: the shell-quoted invocation for the human to run
+where the write succeeds.
 
 ## The vocabulary a read comes back in
 
