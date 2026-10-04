@@ -51,7 +51,6 @@
 #                                           mentions.
 #   host_issue_assign <n> <identity>
 #   host_issue_unassign <n> <identity>
-#   host_issue_has_label <n> <label>     -> exit 0 when present
 #   host_issue_add_label <n> <label>
 #   host_issue_remove_label <n> <label>  (no-op success when absent)
 #   host_issue_comment <n> <body>        (fails with {status})
@@ -68,8 +67,8 @@
 #                                           refuses a set past 20000 rows, and says so on stderr
 #                                           when it does.
 #   host_pr_create <head> <base> <title> <body-file> <issue> -> {number,url,created_at}
-#   host_pr_get <pr>                     -> {number,url,title,body,head_sha,head_ref,base_ref,state,mergeable}
-#   host_pr_for_branch <branch>          -> {number,state} of the newest PR with that head, or null
+#   host_pr_get <pr>                     -> {number,url,title,body,head_sha,head_ref,base_ref,draft,state,mergeable}
+#   host_pr_for_branch <branch>          -> {number,state,head_sha} of the newest PR whose head branch is <branch>, or null
 #   host_pr_checks <pr> <head_sha>       -> [{name,status}]
 #                                           status: pending | success | failure.
 #   host_pr_reviews <pr> <head_sha> [<full-ids-json>]
@@ -95,6 +94,8 @@
 #                                           unavailable. replied: this identity has a comment in the
 #                                           thread, which is how phase 7 skips a thread it already
 #                                           dispositioned in an earlier round.
+#                                           id: poll-pr --full names ids from here too, to read
+#                                           that thread's first comment whole under --brief.
 #                                           GitHub rows also carry comment_id, outdated and url,
 #                                           which no mechanic reads. comment_id is the thread's first
 #                                           review comment, the REST target GitHub's reply is keyed
@@ -109,7 +110,7 @@
 #                                           every comment is a thread that host_pr_reviews already
 #                                           carries, so a notice there reaches poll-pr as a review
 #                                           row, graded by SHIP_SUBSTANTIVE and refused through
-#                                           SHIP_REFUSED_BY.
+#                                           SHIP_ROUND_BY.
 #   host_workflow_runs <file> <since-iso>-> [{status,conclusion,created_at,url,title}] the runs
 #                                           of that workflow file, for the event a comment
 #                                           transport starts, created at or
@@ -166,29 +167,35 @@
 
 SHIP_SCRIPTS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly SHIP_SCRIPTS
-# shellcheck disable=SC2034  # read by the mechanics that source this library
-readonly SHIP_CLAIM_COMMENT='🤖 Claimed by a ship run: implementation in progress.'
 
 # ship_tooling <msg>: the exit-2 shape. Also used when the host adapter itself
 # cannot load, so a broken install still emits the contract, not "command not found".
 ship_tooling() { jq -n --arg e "$1" '{error: $e}'; exit 2; }
-# SHIP_BY_HAND, set by ship_reach_repo, rides every exit-1 answer as `command`.
-ship_fail()    { jq -n --arg e "$1" --arg c "${SHIP_BY_HAND:-}" '{error: $e} + if $c == "" then {} else {command: $c} end'; exit 1; }
-
-# ship_fail_host <msg> <adapter-answer>: the exit-1 shape for a host write that
-# failed, carrying the HTTP status of the last attempt. Without it a host that
-# is briefly down and a payload the host refuses produce the identical verdict,
-# and the run has no way to tell them apart: PR #170 spent four minutes
-# bisecting a valid body against a burst of 500s. <adapter-answer> is whatever
-# the adapter printed on its failure path; an adapter that reports no status,
-# as `az` does, leaves it empty and the status is null. A guessed status is
-# worse than none, so anything that is not a number reads as null.
-ship_fail_host() { # ship_fail_host <msg> <adapter-answer>
-  local s
-  s=$(jq -r 'if (.status | type) == "number" then .status else "null" end' <<<"${2:-}" 2>/dev/null) || s=null
-  [ -n "$s" ] || s=null
-  jq -n --arg e "$1" --argjson s "$s" --arg c "${SHIP_BY_HAND:-}" \
-    '{error: $e, status: $s} + if $c == "" then {} else {command: $c} end'
+# ship_fail <msg> [<adapter-answer>]: the exit-1 shape. SHIP_BY_HAND, set by
+# ship_reach_repo, rides every exit-1 answer as `command`. The message is also
+# written to stderr: a caller piping stdout through `jq -r .field` reads a
+# refusal as `null` and exit 0, and stderr is what still shows it.
+#
+# A second argument, even an empty one, marks a host call that failed (a write,
+# or a read whose answer named a reason), and adds the HTTP status of its last
+# attempt as `status`. Without it a host that is briefly
+# down and a payload the host refuses produce the identical verdict, and the run
+# has no way to tell them apart: PR #170 spent four minutes bisecting a valid
+# body against a burst of 500s. <adapter-answer> is whatever the adapter printed
+# on its failure path; an adapter that reports no status, as `az` does, leaves it
+# empty and the status is null. A guessed status is worse than none, so anything
+# that is not a number reads as null. One argument is a refusal the host never
+# saw, which carries no `status` key.
+ship_fail() {
+  local s=
+  if [ $# -ge 2 ]; then
+    s=$(jq -r 'if (.status | type) == "number" then .status else "null" end' <<<"$2" 2>/dev/null) || s=null
+    [ -n "$s" ] || s=null
+  fi
+  jq -n --arg e "$1" --arg s "$s" --arg c "${SHIP_BY_HAND:-}" \
+    '{error: $e} + (if $s == "" then {} else {status: ($s | fromjson)} end)
+     + if $c == "" then {} else {command: $c} end'
+  printf '%s\n' "$1" >&2
   exit 1
 }
 
@@ -207,13 +214,50 @@ ship_help() { # ship_help <usage> "$@"
   exit 0
 }
 
+# ship_args <usage> <kinds> "$@": the argument check a mechanic that takes a
+# positional or a `--body-file` runs on the line after `ship_help` (run-file
+# again per verb), so before `ship_load_host` and before any guard of its own.
+# <kinds> is one space-separated word list naming the leading positionals in
+# order: `issue` and `pr` are a number, `issue|none` a number or the word
+# `none`, `arg` any value. Each is required and none may start with `-`: without
+# that a flag typed where an id belongs is read as the id and asked of the host.
+# Empty <kinds> checks the `--body-file` alone. Every `--body-file` word among
+# the rest, even one standing as another flag's value, must be followed by a
+# readable regular file. Every failure is `ship_tooling <usage>`; the mechanic
+# still assigns its own variables and checks its own flags.
+ship_args() { # ship_args <usage> <kinds> "$@"
+  local usage=$1 kind v
+  local -a kinds
+  read -ra kinds <<<"$2"; shift 2
+  for kind in ${kinds[@]+"${kinds[@]}"}; do
+    v=${1:-}
+    case $v in ''|-*) ship_tooling "$usage" ;; esac
+    case $kind in
+      issue|pr) [[ $v =~ ^[0-9]+$ ]] || ship_tooling "$usage" ;;
+      issue\|none) [[ $v =~ ^[0-9]+$ ]] || [ "$v" = none ] || ship_tooling "$usage" ;;
+    esac
+    shift
+  done
+  while [ $# -gt 0 ]; do
+    if [ "$1" = --body-file ]; then
+      [ -f "${2:-}" ] && [ -r "$2" ] || ship_tooling "$usage"
+    fi
+    shift
+  done
+}
+
+# ship_issue_has_label <n> <label>: exit 0 when the issue carries the label,
+# read from `host_issue_get`'s labels[] so no adapter keeps a second read of it.
+ship_issue_has_label() {
+  host_issue_get "$1" | jq -e --arg l "$2" 'any(.labels[]; . == $l)' >/dev/null
+}
+
 # ship_tail40 <file>: a failing step's evidence, the last 40 lines of the log.
 ship_tail40() { tail -n 40 "$1" >&2; }
 
 # Branch convention: <type>/<slug>-<issue>. The "-<issue>" suffix is what
-# preflight greps for on the remote.
-ship_branch()           { printf '%s/%s-%s' "$1" "$2" "$3"; }
-ship_branch_suffix_re() { printf -- '-%s$' "$1"; }
+# preflight greps for on the remote and open-pr checks the branch ends in.
+ship_branch() { printf '%s/%s-%s' "$1" "$2" "$3"; }
 
 # The main checkout, even when run from inside a worktree: --git-common-dir
 # points at the primary .git, so a run started in a worktree lands the new one
@@ -240,7 +284,6 @@ ship_base_ref() {
     || return 1
   printf '%s' "${ref#refs/remotes/}"
 }
-ship_base_branch() { local b; b=$(ship_base_ref) || return 1; printf '%s' "${b#origin/}"; }
 
 # Host detection from the origin remote. Sets SHIP_HOST and the host's
 # identifiers; no --host flag and no env var, because every Bash call is a fresh
@@ -259,35 +302,27 @@ ship_detect_host() {
       SHIP_HOST=ado
       local p=${url#*dev.azure.com/}; p=${p%.git}
       SHIP_ORG=${p%%/*}; p=${p#*/}
-      SHIP_PROJECT=${p%%/_git/*}; SHIP_REPO=${p##*/_git/}
-      SHIP_ORG_URL="https://dev.azure.com/$SHIP_ORG"
-      SHIP_REPO_SLUG="$SHIP_ORG/$SHIP_PROJECT/$SHIP_REPO" ;;
-    *@vs-ssh.visualstudio.com:v3/*)
+      SHIP_PROJECT=${p%%/_git/*}; SHIP_REPO=${p##*/_git/} ;;
+    *@vs-ssh.visualstudio.com:v3/*|*ssh.dev.azure.com:v3/*)
       # git@ssh.dev.azure.com:v3/<org>/<project>/<repo> and the visualstudio.com twin
       SHIP_HOST=ado
       local p=${url#*:v3/}
       SHIP_ORG=${p%%/*}; p=${p#*/}
-      SHIP_PROJECT=${p%%/*}; SHIP_REPO=${p#*/}
-      SHIP_ORG_URL="https://dev.azure.com/$SHIP_ORG"
-      SHIP_REPO_SLUG="$SHIP_ORG/$SHIP_PROJECT/$SHIP_REPO" ;;
-    *ssh.dev.azure.com:v3/*)
-      SHIP_HOST=ado
-      local p=${url#*:v3/}
-      SHIP_ORG=${p%%/*}; p=${p#*/}
-      SHIP_PROJECT=${p%%/*}; SHIP_REPO=${p#*/}
-      SHIP_ORG_URL="https://dev.azure.com/$SHIP_ORG"
-      SHIP_REPO_SLUG="$SHIP_ORG/$SHIP_PROJECT/$SHIP_REPO" ;;
+      SHIP_PROJECT=${p%%/*}; SHIP_REPO=${p#*/} ;;
     *.visualstudio.com/*)
       # https://<org>.visualstudio.com/<project>/_git/<repo> (or DefaultCollection/)
       SHIP_HOST=ado
       local hostpart=${url#*://}; hostpart=${hostpart#*@}
       SHIP_ORG=${hostpart%%.visualstudio.com*}
       local p=${url#*.visualstudio.com/}; p=${p#DefaultCollection/}; p=${p%.git}
-      SHIP_PROJECT=${p%%/_git/*}; SHIP_REPO=${p##*/_git/}
-      SHIP_ORG_URL="https://dev.azure.com/$SHIP_ORG"
-      SHIP_REPO_SLUG="$SHIP_ORG/$SHIP_PROJECT/$SHIP_REPO" ;;
+      SHIP_PROJECT=${p%%/_git/*}; SHIP_REPO=${p##*/_git/} ;;
     *) return 1 ;;
   esac
+  # Before the %20 decode below: the slug keeps the project as the remote spells it.
+  if [ "$SHIP_HOST" = ado ]; then
+    SHIP_ORG_URL="https://dev.azure.com/$SHIP_ORG"
+    SHIP_REPO_SLUG="$SHIP_ORG/$SHIP_PROJECT/$SHIP_REPO"
+  fi
   SHIP_PROJECT=$(printf '%s' "${SHIP_PROJECT:-}" | sed 's/%20/ /g')
   export SHIP_HOST SHIP_OWNER SHIP_REPO SHIP_REPO_SLUG SHIP_ORG SHIP_PROJECT SHIP_ORG_URL
 }
@@ -423,6 +458,21 @@ ship_missing_skill_reasons() {
 # `ship_deindent(s)` strips up to three leading spaces. It is a `match` because
 # mawk, the default awk on Debian and Ubuntu, reads `sub(/^ ? ? ?/, ...)` as one
 # optional space.
+#
+# `ship_inert(line)` is what every `## ` heading reader calls instead of
+# `ship_fence`: 0 for a live line, 1 for a fenced one, 2 for a line of a
+# `<details>` record. Such a record runs from a line opening on a whole
+# `<details>` or `<details ...>` tag at column 0 (a `<details` with no `>` is
+# prose) to its matching line opening on `</details>`, nesting counted, or is
+# that one line where it ends on `</details>`: the superseded original a phase-1
+# rewrite keeps, or a changelog a PR body folds away. Only a tag at column 0 counts, so prose inside a record that mentions
+# the tag mid-line neither nests nor closes it. No line of a record is a
+# heading, so the copy of the body's headings it repeats is never matched, never
+# ends a section and never ends the preamble. A fence still wins: a `<details>`
+# line inside a fence opens nothing, and a fenced `</details>` inside a record
+# closes nothing. Its depth lives in the global `_record`, which the awk program
+# embedding it leaves to it like the fence globals. The closing-keyword tests
+# stay on `ship_fence`, since GitHub honours a `Closes #n` inside `<details>`.
 readonly SHIP_AWK_FENCE='function ship_deindent(s) {
     if (match(s, /^ +/)) s = substr(s, (RLENGTH < 3 ? RLENGTH : 3) + 1)
     return s
@@ -438,6 +488,16 @@ readonly SHIP_AWK_FENCE='function ship_deindent(s) {
     }
     else if (c == _fence_char && n >= _fence_len && substr(s, n + 1) ~ /^[ \t\r]*$/) _fenced = 0
     return _fenced
+  }
+  function ship_inert(line,   f, rec) {
+    f = ship_fence(line); rec = _record
+    if (f) return rec ? 2 : f
+    if (line ~ /^<details(>|[ \t][^>]*>)/) {
+      _record++; rec = 1
+      if (line ~ /<\/details>[ \t\r]*$/) _record--
+    }
+    else if (_record && line ~ /^<\/details>/) _record--
+    return rec ? 2 : 0
   }
 '
 
@@ -512,9 +572,13 @@ ship_body_closing_line() { # ship_body_closing_line <text>
 # `Closes` line above the first heading. Prints the new body; exit 0 replaced,
 # 1 created, the way ship_body_closes answers with its exit code.
 #
-# The heading match is anchored at column 0 and skips fenced blocks by
-# SHIP_AWK_FENCE, the rule _gh_add_closes reads too, so the two agree on what a
-# section boundary is. It compares the line to `## <section>` LITERALLY rather
+# The heading match is anchored at column 0 and skips fenced blocks and
+# `<details>` records by `ship_inert`, the rule _gh_add_closes reads too, so the
+# two agree on what a section boundary is. A record in the section's old content
+# is never deleted: it is carried through verbatim, in order, below the new
+# content, each one followed by a blank line.
+#
+# It compares the line to `## <section>` LITERALLY rather
 # than building an ERE around the name: `--section` takes any name, and a `.` or
 # a `+` in one would otherwise match a heading nobody asked for, silently
 # rewriting the wrong section of a PR body. Both sides of that comparison have
@@ -563,11 +627,12 @@ ship_body_replace_section() { # ship_body_replace_section <body> <section> <body
       for (i = start; i <= n; i++) print buf[i]
     }
     BEGIN { hd = trimmed("## " ENVIRON["SHIP_SECTION"], 1) }
-    { fenced = ship_fence($0) }
-    !fenced && trimmed($0, 0) == hd {
+    { inert = ship_inert($0) }
+    !inert && trimmed($0, 0) == hd {
       if (skip) next
       print; print ""; dump(); print ""; skip=1; placed=1; next }
-    skip && !fenced && /^## / { skip=0 }
+    skip && !inert && /^## / { skip=0 }
+    skip && inert == 2 { print; if (!_record) print ""; next }
     !skip { print }
     END { if (!placed) { printf "\n%s\n\n", hd; dump(); exit 1 } }' <<<"$1"
 }
@@ -579,9 +644,9 @@ ship_body_replace_section() { # ship_body_replace_section <body> <section> <body
 # rewrite that half before #173, so an accepted body-shape finding in phase 7 was
 # reported and left standing; this is what makes it a fix like any other.
 #
-# The boundary is the same column-0 `^## ` outside a fence that
-# ship_body_replace_section and _gh_add_closes read, so the two halves of a body
-# meet exactly and neither can reach into the other.
+# The boundary is the same column-0 `^## ` outside a fence or a `<details>`
+# record that ship_body_replace_section and _gh_add_closes read, so the two
+# halves of a body meet exactly and neither can reach into the other.
 #
 # Unlike a section, a preamble is always present: a body that opens on its first
 # heading has an empty one, and the content is placed above that heading. So
@@ -606,8 +671,8 @@ ship_body_replace_preamble() { # ship_body_replace_preamble <body> <body-file>
   local content carried pre
   content=$(cat "$2")
   pre=$(awk "$SHIP_AWK_FENCE"'
-    { fenced = ship_fence($0) }
-    !fenced && /^## / { exit }
+    { inert = ship_inert($0) }
+    !inert && /^## / { exit }
     { print }' <<<"$1")
   carried=$(ship_body_closing_line "$pre")
   if [ -n "$carried" ] && [ -z "$(ship_body_closing_line "$content")" ]; then
@@ -624,8 +689,8 @@ ship_body_replace_preamble() { # ship_body_replace_preamble <body> <body-file>
       for (i = 1; i <= n; i++) print a[i]
       return n
     }
-    { fenced = ship_fence($0) }
-    !placed && !fenced && /^## / { if (dump() > 0) print ""; placed = 1 }
+    { inert = ship_inert($0) }
+    !placed && !inert && /^## / { if (dump() > 0) print ""; placed = 1 }
     placed { print }
     END { if (!placed) dump() }' <<<"$1"
 }
@@ -721,36 +786,37 @@ readonly SHIP_SUBSTANTIVE="$SHIP_BLOCKED_NOTICE"'
     else (.state | IN("approved", "changes")) end;
   .on_head |= map(.substantive = substantive) | .all |= map(.substantive = substantive)'
 
-# poll-pr's two landing rules over a `host_pr_reviews` projection, invoked with
-# `--arg l <normalised login>` and `--arg s <since|"">`. `$l` arrives already
-# lowercased and stripped of a `[bot]` suffix, the row side normalised here to
-# match. Only a SUBSTANTIVE row lands, as `SHIP_SUBSTANTIVE` graded it, which is
-# what keeps a quota notice from answering for a round that has yet to arrive
-# (#155).
-# shellcheck disable=SC2034  # read by poll-pr
-readonly SHIP_LANDED_BY='
-  def mine: [.[] | select(.substantive and ((.login | ascii_downcase | sub("\\[bot\\]$"; "")) == $l))];
-  if $s == "" then (if (.on_head | mine) != [] then "head" else null end)
-  else (if (.all | mine | map(select(.submitted_at != null and .submitted_at >= $s))) != [] then "since" else null end)
-  end'
+# The one rule for matching a login: case-insensitive, less a `[bot]` suffix, so
+# `Copilot` and `copilot[bot]` are one reviewer wherever a login is compared.
+# Prepend it to a jq program that calls `norm`.
+readonly SHIP_LOGIN_NORM='def norm: ascii_downcase | sub("\\[bot\\]$"; "");'
 
-# poll-pr's refusal test, over the same projection and the same two arguments:
-# the rule that admitted a NOTICE row by that login, a row with a body that is
-# not substantive, which is the one kind `is_notice` leaves. A quota notice
-# answers the request it follows, and no round is coming after it: Copilot's
-# quota is the requesting user's and monthly, so waiting the window out, or
-# asking again, buys nothing (#248, #250: every poll spent its whole window on
-# a refusal already posted). Read only when no round landed, so a round that
-# follows a notice still lands. A notice posted as a PR comment rather than as a
-# review leaves no row here: poll-pr admits it from `host_pr_reviewer_blocked`'s
-# `at`, under the since rule only (#256).
+# poll-pr's two row rules over a `host_pr_reviews` projection: `round_by(<row
+# predicate>)`, invoked with `--arg l <login>` and `--arg s <since|"">`, both
+# sides normalised by `norm`. It answers "head" under the head rule (`$s` is
+# empty) when a row on the head satisfies the predicate, "since" under the since
+# rule when a row in `all` submitted at or after `$s` does, else null.
+#
+# Landing passes `.substantive`: only a SUBSTANTIVE row lands, as
+# `SHIP_SUBSTANTIVE` graded it, which is what keeps a quota notice from
+# answering for a round that has yet to arrive (#155).
+#
+# Refusal passes a NOTICE predicate: a row by that login that is not
+# substantive and has a body, the one kind `is_notice` leaves. A quota notice answers the request
+# it follows, and no round is coming after it: Copilot's quota is the requesting
+# user's and monthly, so waiting the window out, or asking again, buys nothing
+# (#248, #250: every poll spent its whole window on a refusal already posted).
+# Read only when no round landed, so a round that follows a notice still lands. A
+# notice posted as a PR comment rather than as a review leaves no row here:
+# poll-pr admits it from `host_pr_reviewer_blocked`'s `at`, under the since rule
+# only (#256).
 # shellcheck disable=SC2034  # read by poll-pr
-readonly SHIP_REFUSED_BY='
-  def refusals: [.[] | select((.substantive | not) and (.body // "") != ""
-                              and ((.login | ascii_downcase | sub("\\[bot\\]$"; "")) == $l))];
-  if $s == "" then (if (.on_head | refusals) != [] then "head" else null end)
-  else (if (.all | refusals | map(select(.submitted_at != null and .submitted_at >= $s))) != [] then "since" else null end)
-  end'
+readonly SHIP_ROUND_BY="$SHIP_LOGIN_NORM"'
+  def round_by(row):
+    def mine: [.[] | select(row and ((.login | norm) == ($l | norm)))];
+    if $s == "" then (if (.on_head | mine) != [] then "head" else null end)
+    else (if (.all | mine | map(select(.submitted_at != null and .submitted_at >= $s))) != [] then "since" else null end)
+    end;'
 
 # poll-pr's pick of THE run a comment-transport reviewer's round is waiting on,
 # over a `host_workflow_runs` projection, invoked with `--arg t <the PR's title>`.
@@ -776,31 +842,39 @@ readonly SHIP_REVIEWER_RUN='
      // {status: "none", conclusion: null, url: null})
   | {status, conclusion, url, denied: null}'
 
-# ship_fence_unclosed <text>: does the text end inside a fenced block? Prints
-# `line <n>: <run>` naming the opener still open, or nothing when the
-# fence state is balanced. `update-pr-body` asks before it rewrites a section:
-# an open fence inverts the in-fence state for the rest of the body, so every
-# `## ` heading after it reads as example text and the rewrite swallows the
-# sections between them (run #121 lost four that way).
+# ship_fence_unclosed <text>: does the text end inside a fenced block or a
+# `<details>` record? Prints `line <n>: <run>` naming the opener still open, or
+# nothing when both are balanced. `update-pr-body` asks before it rewrites a
+# section: an open fence inverts the in-fence state for the rest of the body,
+# so every `## ` heading after it reads as example text and the rewrite
+# swallows the sections between them (run #121 lost four that way). An open
+# record hides every heading after it the same way, so it is reported too,
+# naming the outermost opener as `line <n>: <details>`. This is the one reader
+# of `ship_inert`'s globals rather than its answer: it asks which of the two is
+# still open at the end, which the per-line answer does not say.
 ship_fence_unclosed() {
   awk "$SHIP_AWK_FENCE"'
-    { was = fenced; fenced = ship_fence($0)
-      if (!was && fenced) {
+    { was = _fenced; was_rec = _record; ship_inert($0)
+      if (!was && _fenced) {
         open_line = NR; open_run = $0
         open_run = ship_deindent(open_run); sub(/[^`~].*$/, "", open_run)
-      } }
-    END { if (fenced) printf "line %d: %s\n", open_line, open_run }' <<<"$1"
+      }
+      if (!was_rec && _record) rec_line = NR }
+    END {
+      if (_fenced) printf "line %d: %s\n", open_line, open_run
+      else if (_record) printf "line %d: <details>\n", rec_line }' <<<"$1"
 }
 
 # ship_body_headings <body>: the body's `## ` section headings, heading text
-# only, one per line, in order. The same fence rule as every transformation
-# above, so a `## ` inside a fence is example text here too. `update-pr-body`
+# only, one per line, in order. The same `ship_inert` rule as every
+# transformation above, so a `## ` inside a fence is example text here too, and
+# one inside a `<details>` record is not a section. `update-pr-body`
 # reports this after the write, where a swallowed section is visible in the JSON
 # rather than eight minutes later in a review.
 ship_body_headings() {
   awk "$SHIP_AWK_FENCE"'
-    { fenced = ship_fence($0) }
-    !fenced && /^## / { sub(/^## /, ""); sub(/[ \t\r]+$/, ""); print }' <<<"$1"
+    { inert = ship_inert($0) }
+    !inert && /^## / { sub(/^## /, ""); sub(/[ \t\r]+$/, ""); print }' <<<"$1"
 }
 
 # ship_profile_path: the ship profile in the checkout the caller runs in, rather
@@ -836,6 +910,21 @@ ship_no_checks_expected() { # <profile-body>
   grep -Eq '^Legs:[[:space:]]*None\.[[:space:]]*$' <<<"$ci" || return 1
   grep -Eq '^No-checks legal:[[:space:]]*yes([^[:alnum:]]|$)' <<<"$ci" || return 1
   return 0
+}
+
+# ship_head_stale <pr-json> [<sha>]: true while the host shows a PR head other
+# than the expected one, so `ci-wait` and `poll-pr` wait inside their window
+# rather than grade the previous head: straight after a push the host can still
+# show it (#394). The expected head is `<sha>`, a prefix match against the host's
+# full one, else the local HEAD when the caller's checkout is on the PR's head
+# branch. With neither there is no expected head, and nothing is stale.
+ship_head_stale() { # <pr-json> [<sha>]
+  local want=${2:-}
+  if [ -z "$want" ]; then
+    [ "$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$(jq -r .head_ref <<<"$1")" ] || return 1
+    want=$(git rev-parse HEAD 2>/dev/null) || return 1
+  fi
+  case $(jq -r .head_sha <<<"$1") in "$want"*) return 1 ;; esac
 }
 
 # ship_reviewers <profile-body>: the `## Reviewers` section as one JSON row per
@@ -1153,13 +1242,17 @@ ship_pr_state_reason() { # ship_pr_state_reason <state>
 # each carrying the `path` its finding sits on and the `lead` line that states
 # it, cut at the same width: a run answers one thread off the brief, and a row
 # holding an id alone sent it back for the full shape to read what the finding
-# was. The string "unavailable" passes through as itself. `reviewer_run` passes
+# was. A lead that drops a later line with text carries the marker too (one
+# marker, even where the width cut also bit), so a finding below a short first
+# line is not read as the whole comment (#328). A CRLF blank line is blank.
+# A thread named by <full-ids-json> carries its whole first comment as
+# `lead`, so a clipped lead is lifted by the re-poll that lifts a clipped round
+# (#327). The string "unavailable" passes through as itself. `reviewer_run` passes
 # through whole, the string "unavailable" included: it is four fields, and a
 # loop reading rounds from the brief is the loop that has to tell a silent
 # reviewer from one whose run is still going.
 ship_brief() {
-  jq -c --arg me "$2" --arg key "$3" --argjson full "${4:-[]}" '
-    def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+  jq -c --arg me "$2" --arg key "$3" --argjson full "${4:-[]}" "$SHIP_LOGIN_NORM"'
     def by($l): ((.login // "") | norm) == ($l | norm);
     def mine: $me != "" and by($me);
     def awaited($l): $l == "" or by($l);
@@ -1171,7 +1264,10 @@ ship_brief() {
       | if ($items | length) == 0 then clip
         elif $lines[0] == $items[0] then (($items | join("\n")) + $mark)
         else ((([$lines[0]] + $items) | join("\n")) + $mark) end;
-    def lead: [splits("\n") | select(test("^[ \t]*$") | not)] | (.[0] // "") | clip;
+    def lead: [splits("\n") | select(test("^[ \t\r]*$") | not)] as $lines
+      | ($lines[0] // "") as $first | ($first | clip) as $cut
+      | if ($lines | length) > 1 and $cut == $first
+        then $first + "\n...[truncated]" else $cut end;
     (.reviewer.login // "") as $await
     | {head_sha, mergeable, reviewer, landed_by, refused_by, not_reviewed, reviewer_blocked, reviewer_run,
      rounds: [.reviews[$key][] | select((mine | not) and awaited($await)) | . as $r
@@ -1180,6 +1276,9 @@ ship_brief() {
                         else ($r.body | finding_items) end)}],
      threads: (if (.threads | type) == "array"
                then [.threads[] | select(.resolved | not)
-                     | {id, path, lead: ((.body // "") | lead), resolved, replied}]
+                     | . as $t | {id, path,
+                                  lead: (if ($full | index($t.id | tostring)) then ($t.body // "")
+                                         else (($t.body // "") | lead) end),
+                                  resolved, replied}]
                else .threads end)}' <<<"$1"
 }

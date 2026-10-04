@@ -21,6 +21,12 @@ still a complete run. The levers, in rough order of impact:
   subagent ("map how X, Y, Z connect; return signatures, call sites and data
   shapes") and read only the exact lines you will edit: a file you only need to
   *understand* stays out of main context.
+- **Read one reference file per call.** Several files chained in one `cat`
+  can pass the persist limit, and the caller then sees a 2 KB preview of the
+  lot and re-reads each file it chained.
+- **Read the profile by `##` section**, naming the heading (`## Reviewers`,
+  say) in a section-scoped `awk` or `sed -n`, for the sections a phase uses,
+  rather than the whole file.
 - **Investigate inside the worktree from the start**, so every file you read is
   the copy you will edit.
 - **Targeted test nodes during the loop; the full suite only at the local
@@ -36,10 +42,10 @@ still a complete run. The levers, in rough order of impact:
 `execute`, `verify`, `standards`, `spec`, `writing`). A subagent handed nowhere
 to write reaches for the scratchpad its own environment block names, which is
 the Run file's parent, and can overwrite the checklist with no failure signal.
-The directory is a **sibling** of the Run file's rather than a child, so a path a
-subagent invents below it still lands clear of the record. Edits to the repo go
-under the worktree prefix. Pass it the way you pass the model tier: written into
-the prompt, every dispatch.
+The directory is a **sibling** of the Run file's rather than a child, so a path
+a subagent invents below it still lands clear of the record. Edits to the repo
+go under the worktree prefix. Pass it the way you pass the model tier: written
+into the prompt, every dispatch.
 
 ## While a subagent is out, end the turn
 
@@ -82,7 +88,8 @@ itself before dispositioning. The Run file's `## Design and plan` names the
 paths; disposition from the file, and quote the merge summary's `Self-review`
 rows from it.
 
-**A clobbered Run file** answers a flip with a refusal naming a missing line,
-and that refusal carries the rebuild. A `--state` with no recoverable range is
-`done` bare and reads `unverified` on the `Timing:` row, as does the phase
-re-opened at the rebuild; afterwards re-check the task mirror against the file.
+**A clobbered Run file** answers a flip with a refusal naming a missing line or
+a missing file, and each refusal carries its check and the rebuild. A `--state`
+with no recoverable range is `done` bare and reads `unverified` on the `Timing:`
+row, as does the phase re-opened at the rebuild; afterwards re-check the task
+mirror against the file.

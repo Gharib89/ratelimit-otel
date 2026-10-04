@@ -2,7 +2,7 @@
 
 Schema: 3
 
-Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship` checks at preflight; only a `setup-skills` re-run moves it. Vocabulary: the `ship` skill's source repo, `Gharib89/skills`, [CONTEXT.md](https://github.com/Gharib89/skills/blob/main/CONTEXT.md).
+Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship` checks at preflight; only a `setup-skills` re-run moves it.
 
 <!-- setup-skills: fill every `Label:` line, replace each <...>, delete these comments. -->
 
@@ -96,7 +96,7 @@ File as an issue labelled `<the needs-triage label from docs/agents/triage-label
 
 ## Docs sync
 
-Targets: <artifacts coupled to a change: README.md, docs/, CONTEXT.md, a shipped skill, examples/, an issue such as map issue #<n>, whose `## ` sections ship rewrites after the merge>
+Targets: <artifacts coupled to a change: README.md, docs/, GLOSSARY.md, a shipped skill, examples/, an issue such as map issue #<n>, whose `## ` sections ship rewrites after the merge>
 Agent-facing: <every path here whose reader is an agent, whether or not it is also a docs-sync target: docs/agents/, .claude/skills/>
 
 ## Current docs

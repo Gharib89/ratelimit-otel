@@ -23,9 +23,8 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: open-pr <issue|none> --title "<subject>" --body-file <path>'
 ship_help "$usage" "$@"
-[ -n "${1:-}" ] || ship_tooling "$usage"
+ship_args "$usage" "issue|none" "$@"
 n=$1; shift
-case $n in -*) ship_tooling "$usage" ;; esac
 title=""; file=""
 while [ $# -gt 0 ]; do
   case $1 in
@@ -34,15 +33,16 @@ while [ $# -gt 0 ]; do
     *) ship_tooling "unknown flag: $1" ;;
   esac
 done
-[ -n "$title" ] && [ -f "$file" ] || ship_tooling "$usage"
+[ -n "$title" ] && [ -n "$file" ] || ship_tooling "$usage"
 ship_load_host
 
 branch=$(git rev-parse --abbrev-ref HEAD) || ship_tooling "not inside a git checkout"
 [ "$branch" != HEAD ] || ship_tooling "detached HEAD; check out the run's branch first"
 if [ "$n" != none ]; then
-  [[ $branch =~ $(ship_branch_suffix_re "$n") ]] || ship_tooling "branch $branch does not end in -$n; is this the run's worktree?"
+  [[ $branch == *-"$n" ]] || ship_tooling "branch $branch does not end in -$n; is this the run's worktree?"
 fi
-base=$(ship_base_branch) || ship_tooling "cannot resolve origin/HEAD"
+base=$(ship_base_ref) || ship_tooling "cannot resolve origin/HEAD"
+base=${base#origin/}
 [ "$branch" != "$base" ] || ship_tooling "refusing to open a PR from the base branch $base"
 
 log=$(mktemp); trap 'rm -f "$log"' EXIT

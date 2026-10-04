@@ -132,12 +132,13 @@ section, because `update-issue-body` replaces nothing smaller.
 A drafted section is written after the merge and never before, so no issue
 records code that has not landed: once `merge` answers `merged: true`, and
 before `cleanup`, run `update-issue-body <n> --section "<section>" --body-file
-<draft>` per tracker draft, `<section>` verbatim from the heading `read-issue` returned.
-Re-read the issue first: a section that no longer matches its base is
+<draft>` per tracker draft, `<section>` verbatim from the heading `read-issue`
+returned. Re-read the issue first: a section that no longer matches its base is
 redrafted, posted, and written on the human's explicit "yes". `created: true`
 for a section the draft meant to replace means the name missed: re-run with the
 returned heading, and name the stray section as a Ship defect. Exit 1 means
-nothing was written: a Ship defect for the summary, with the tracker draft attached.
+nothing was written: a Ship defect for the summary, with the tracker draft
+attached.
 
 The unattended lane runs no merge, so under each draft the summary gives the
 command a human runs after merging, from a file they save the draft to,
@@ -155,12 +156,15 @@ before a reviewer lands.
 **On approval**, from the worktree, `merge <pr> <issue|none> [--worktree
 <path>]`. Its header carries what it does and what each refusal protects
 against: `pr-closed: <state>` and `stale-base: behind <n> on <base>` merge
-nothing (for the second, rebase, re-run the local gate and come back to this
-gate); otherwise it squash-merges with the PR title as the subject, closes the
-issue, deletes the remote branch, fast-forwards the local base, and releases the
-claim and strips `ready-for-agent`, so a reopened issue goes back through
-triage. Then each drafted tracker section, then `cleanup <issue|none>`, which
-removes the worktree and force-deletes the local branch.
+nothing (for the second, merge the base in, re-run the local gate and come back
+to this gate); otherwise it squash-merges with the PR title as the subject,
+closes the issue, deletes the remote branch, fast-forwards the local base, and
+releases the claim and strips `ready-for-agent`, so a reopened issue goes back
+through triage. Then each drafted tracker section, then `cleanup <issue|none>`,
+which removes the worktree and force-deletes the local branch. The Run file
+lives in the scratchpad, so `cleanup` leaves it: once its `Done when:` holds,
+every Ship defect draft settled too, `run-file close 9` and set the task to the
+returned `mirror`, so the record and the task list both end with phase 9 done.
 
 **If the human says no or wants changes**, treat the note as the next round of
 work: apply it on the same branch, re-run the local gate, come back to this
@@ -168,21 +172,22 @@ gate. Do not re-open the whole pipeline.
 
 ## Filing a Ship defect
 
-A Ship defect draft reaches the source repo on the human's word alone ([ADR 0004](https://github.com/Gharib89/skills/blob/main/docs/adr/0004-cross-repo-writes-reach-the-source-repo-on-the-humans-word.md)),
+A Ship defect draft reaches the source repo on the human's word alone,
 and "merge" is not that word: it approves the PR, not publishing the run's
 context to a public repo. On "file defects", or a word naming one draft, run
 `file-issue --repo Gharib89/skills --title "<title>" --body-file <draft> --label
-needs-triage` per Ship defect draft and put its answer on the row: the number filed, the
-candidates it answered with instead, each read the way phase 2 reads one, or,
-on exit 1 with a `command`, that command verbatim for the human to run where
-the write succeeds. Before or after the merge, either order holds.
+needs-triage` per Ship defect draft and put its answer on the row: the number
+filed, the candidates it answered with instead, each read the way phase 2 reads
+one, or, on exit 1 with a `command`, that command verbatim for the human to run
+where the write succeeds. Before or after the merge, either order holds.
 
 ## Unattended: post to the PR, then return
 
-`comment-pr <pr> --body-file` with the summary, then **return** with the PR
-link. Do not wait, poll, or merge; the claim stays on the issue, which carries
-the open PR, so later fires skip it until a human merges. The last line becomes
-"Ready to merge: a human merges from the PR." A Ship defect's draft is never
+`comment-pr <pr> --body-file` with the summary, `run-file close 9` with the
+task set to the returned `mirror`, then **return** with the PR link. Do not
+wait, poll, or merge; the claim stays on the issue, which carries the open PR,
+so later fires skip it until a human merges. The last line becomes "Ready to
+merge: a human merges from the PR." A Ship defect's draft is never
 filed from here, and the comment drops the "file defects" line: it carries each
 draft verbatim under the command a human runs from a file they save it to,
 `.claude/skills/ship/scripts/file-issue.sh --repo Gharib89/skills --title
