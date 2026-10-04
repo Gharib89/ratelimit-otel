@@ -7,6 +7,115 @@ released version. See
 
 <!-- version list -->
 
+## v0.12.2 (2026-10-03)
+
+### Bug Fixes
+
+- **setup-skills**: A later gate write keeps the worse status
+  ([#465](https://github.com/Gharib89/skills/pull/465),
+  [`8c85f1d`](https://github.com/Gharib89/skills/commit/8c85f1dbc916629539b03d60498f041f8f9793be))
+
+
+## v0.12.1 (2026-10-03)
+
+### Refactoring
+
+- **setup-skills**: Local gate on Bash 3.2, one bootstrap test, stale gate comments
+  ([#463](https://github.com/Gharib89/skills/pull/463),
+  [`75a0de3`](https://github.com/Gharib89/skills/commit/75a0de3ed65528dda3630a8c748d5c9367bed81b))
+
+
+## v0.12.0 (2026-10-02)
+
+### Features
+
+- The lock decides the skill set, and each check and tool message points to the way forward
+  ([#443](https://github.com/Gharib89/skills/pull/443),
+  [`4af91bb`](https://github.com/Gharib89/skills/commit/4af91bbc5c913ef958d6d591e961133dfc279fbf))
+
+
+## v0.11.1 (2026-09-30)
+
+### Documentation
+
+- **setup-skills**: Carry the three depth checks in the standards template
+  ([#430](https://github.com/Gharib89/skills/pull/430),
+  [`5e55dca`](https://github.com/Gharib89/skills/commit/5e55dca39b7d904d797e752a4b9d1d5bfd23152c))
+
+
+## v0.11.0 (2026-09-29)
+
+### Features
+
+- **ship**: Move tdd and triage to d81f3a1 and retire CONTEXT.md for GLOSSARY.md
+  ([#411](https://github.com/Gharib89/skills/pull/411),
+  [`4ad593d`](https://github.com/Gharib89/skills/commit/4ad593dbc393d2e5d15046018cb9c8c98c9d2573))
+
+
+## v0.10.2 (2026-09-29)
+
+### Bug Fixes
+
+- **setup-skills**: Refresh an installed Claude reviewer workflow on a setup section re-run
+  ([#409](https://github.com/Gharib89/skills/pull/409),
+  [`8d3774f`](https://github.com/Gharib89/skills/commit/8d3774f5ff0a5eb7ed628b5f857f76a53effe6d4))
+
+
+## v0.10.1 (2026-09-29)
+
+### Bug Fixes
+
+- **setup-skills**: Map check.sh's per-check statuses on exit 2 and 3
+  ([#410](https://github.com/Gharib89/skills/pull/410),
+  [`226127c`](https://github.com/Gharib89/skills/commit/226127cd6445116c57b4abe7a32c48f4642f2874))
+
+
+## v0.10.0 (2026-09-29)
+
+### Features
+
+- **setup-skills**: Pin the claude reviewer template's actions and drop checkout credentials
+  ([#405](https://github.com/Gharib89/skills/pull/405),
+  [`9b40b12`](https://github.com/Gharib89/skills/commit/9b40b12537d8a02cbbd3df9cb213305ca145d0f5))
+
+
+## v0.9.0 (2026-09-28)
+
+### Features
+
+- **setup-skills**: Local gate and cloud bootstrap over the harness
+  ([#384](https://github.com/Gharib89/skills/pull/384),
+  [`a0a8f9a`](https://github.com/Gharib89/skills/commit/a0a8f9ae146bfec29e0f84faa3f72f76fb84c303))
+
+
+## v0.8.2 (2026-09-28)
+
+### Bug Fixes
+
+- **skills**: Keep every skill self-contained, and gate it
+  ([#380](https://github.com/Gharib89/skills/pull/380),
+  [`76934a4`](https://github.com/Gharib89/skills/commit/76934a4d031a8f63229b3c79ea93df4d762b016e))
+
+
+**The renumber to 0.x.** Every entry below predates it and keeps the number it was released under. `setup-skills` was never publicly released, so on 2026-09-28 its version moved from 8.1.1 to 0.8.1: the old major is now the minor. The release run writes new entries above this note, counting on from 0.8.1. See [ADR 0005](https://github.com/Gharib89/skills/blob/main/docs/adr/0005-skills-stay-0x-until-public-release.md).
+
+## v8.1.1 (2026-09-26)
+
+### Bug Fixes
+
+- **skills**: Prompt-audit cleanup of ship and setup-skills prose
+  ([`9b84fb6`](https://github.com/Gharib89/skills/commit/9b84fb6742875c2fd9dda08f0010b31f200bb5ab))
+
+
+## v8.1.0 (2026-09-26)
+
+### Features
+
+- **setup-skills**: Ship block as a setup section, whole-file section re-run
+  ([#326](https://github.com/Gharib89/skills/pull/326),
+  [`874cca1`](https://github.com/Gharib89/skills/commit/874cca19fbe56ffc99be0d6cac1a31c09aa244ac))
+
+
 ## v8.0.0 (2026-09-26)
 
 ### Bug Fixes

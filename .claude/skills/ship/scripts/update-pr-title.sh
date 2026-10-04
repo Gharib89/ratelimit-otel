@@ -10,9 +10,8 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: update-pr-title <pr> --title "<subject>"'
 ship_help "$usage" "$@"
-[ -n "${1:-}" ] || ship_tooling "$usage"
+ship_args "$usage" pr "$@"
 pr=$1; shift
-case $pr in -*) ship_tooling "$usage" ;; esac
 title=""
 while [ $# -gt 0 ]; do
   case $1 in
@@ -28,7 +27,7 @@ if [ "$before" = "$title" ]; then
   jq -n --argjson pr "$pr" --arg t "$title" '{pr: $pr, title: $t, changed: false}'
   exit 0
 fi
-answer=$(host_pr_set_title "$pr" "$title") || ship_fail_host "PR title update failed" "$answer"
+answer=$(host_pr_set_title "$pr" "$title") || ship_fail "PR title update failed" "$answer"
 # The write is proven by the read-back rather than by the host call's exit code.
 after=$(host_pr_get "$pr" | jq -r .title) || ship_tooling "cannot read PR $pr back"
 [ "$after" = "$title" ] || ship_fail "PR title read back as: $after"

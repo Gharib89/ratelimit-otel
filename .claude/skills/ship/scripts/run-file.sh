@@ -25,7 +25,8 @@
 #
 # `init` writes the ten items and returns them, one per harness task the run
 # then creates; `--rebuild` with `--state` is the recovery from a Run file a
-# subagent overwrote. A flip returns the `mirror` value for that phase's task.
+# subagent overwrote or removed. A flip returns the `mirror` value for that
+# phase's task.
 # Below the checklist it writes three sections the run fills by hand: `Design
 # and plan`, `Deviations log`, and `Direct reads`, one line per informational
 # read the run made straight through the host's REST form, no mechanic covering
@@ -40,10 +41,12 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 
 usage='usage: run-file init <issue|slug> --scratchpad <dir> [--rebuild] [--state <n>=<spec>] [--tripwires <t>] [--verifications <v>] [--reviewers <r>] [--legs <l>] | open <n> | close <n> | skip <n> <reason> | timing, each taking --file <path> or --issue <n|slug> [--scratchpad <dir>, default $TMPDIR or /tmp] resolving <scratchpad>/ship-<issue>/run.md'
+# The recovery both refusals of a missing record carry, rather than prose a
+# compacted run may no longer hold.
+rebuild_hint="rebuild it with \`run-file init <issue> --scratchpad <dir> --rebuild\`, re-passing the --tripwires, --verifications, --reviewers and --legs the run began with and one --state per phase the transcript accounts for (open for the one that was running, no invented range), then log what was lost in the deviations log"
 ship_help "$usage" "$@"
-[ -n "${1:-}" ] || ship_tooling "$usage"
+ship_args "$usage" arg "$@"
 verb=$1; shift
-case $verb in -*) ship_tooling "$usage" ;; esac
 
 # The ten items, in the fixed wording. Four carry a tail the ship profile
 # supplies; the rest are the same in every repo.
@@ -106,6 +109,17 @@ open_phase() {
          if ($0 ~ / in_progress \([0-9][0-9]:[0-9][0-9]→\)$/) { print p; exit }
        }' "$file"
 }
+# The first phase below <n> whose row is not `[x]`: closed, rebuilt `done` and
+# skipped all tick it, so every phase that ran or was skipped passes. Only the
+# first row per phase counts, as in `open_phase`.
+unflipped() { # unflipped <n>
+  awk -v n="$1" '/^- \[.\] [0-9][0-9]* · / {
+         p = substr($0, 7); sub(/ .*/, "", p)
+         if (p in seen) next
+         seen[p] = 1
+         if (p + 0 < n + 0 && $0 !~ /^- \[x\] /) { print p; exit }
+       }' "$file"
+}
 
 # Every line the mechanic writes is rendered here, so the flips and `init`'s
 # rebuild cannot drift into two spellings of the same state.
@@ -138,8 +152,9 @@ parse_file() { # parse_file "$@": where every flip and timing reads the record
   [ -n "$file" ] || [ -n "$issue" ] || ship_tooling "$usage"
   [ -n "$file" ] || file="${scratchpad%/}/ship-$issue/run.md"
   # The resolved path, not the flags it came from: a run that brought the wrong
-  # scratchpad reads which record the mechanic went looking for.
-  [ -f "$file" ] || ship_fail "no Run file at $file"
+  # scratchpad reads which record the mechanic went looking for, and one whose
+  # record a subagent removed reads the same recovery as an overwritten one.
+  [ -f "$file" ] || ship_fail "no Run file at $file: check that path first; if it is the right one, a subagent removed the Run file; $rebuild_hint"
 }
 # The row a flip acts on, or the refusal that it is not there. A missing line
 # for one of the ten phases is the symptom of a Run file a subagent wrote over,
@@ -150,7 +165,7 @@ take_row() { # take_row <n>: sets line and lineno
   row=$(phase_row "$1")
   if [ -z "$row" ]; then
     case $1 in
-      [0-9]) ship_fail "no phase $1 line in $file: a subagent overwrote the Run file; rebuild it with \`run-file init <issue> --scratchpad <dir> --rebuild\`, re-passing the --tripwires, --verifications, --reviewers and --legs the run began with and one --state per phase the transcript accounts for (open for the one that was running, no invented range), then log what was lost in the deviations log" ;;
+      [0-9]) ship_fail "no phase $1 line in $file: a subagent overwrote the Run file; $rebuild_hint" ;;
     esac
     ship_fail "no phase $1 line in $file"
   fi
@@ -165,9 +180,8 @@ flip_json() { # flip_json <state> <line> <mirror> [<reason>]
 
 case $verb in
 init)
-  [ -n "${1:-}" ] || ship_tooling "$usage"
+  ship_args "$usage" arg "$@"
   id=$1; shift
-  case $id in -*) ship_tooling "$usage" ;; esac
   scratchpad="" tripwires=None verifications="None applicable" reviewers=none legs=None
   rebuild=false states=""
   while [ $# -gt 0 ]; do
@@ -250,6 +264,12 @@ open)
     [ "$busy" = "$n" ] && ship_fail "phase $n is already open"
     ship_fail "phase $busy is open; close it before opening $n"
   fi
+  # A phase opened over one never flipped leaves that one unticked and
+  # `unverified` on the Timing row for a phase that may have run. For a phase
+  # that ran, the recovery is open-then-close: `close` needs it open, and `skip`
+  # would record it as not run. A phase that did not run is skipped.
+  gap=$(unflipped "$n")
+  [ -n "$gap" ] && ship_fail "phase $gap is neither closed nor skipped. If it ran: \`run-file open $gap\`, \`run-file close $gap\`, then note in the deviations log that its stamp is the recovery time, so its minutes and any start→PR or PR→gate figure it bounds reflect the recovery, plus when it really ran if the transcript holds that. If it did not run: \`run-file skip $gap <reason>\`. Then retry \`run-file open $n\`, which names the next such phase if any."
   new=$(render open "$(item "$line")" "$(date -u +%H:%M)")
   write_line "$lineno" "$new"
   flip_json open "$new" in_progress
@@ -271,9 +291,8 @@ close)
   ;;
 skip)
   phase_arg "${1:-}"; n=$1; shift
-  [ -n "${1:-}" ] || ship_tooling "$usage"
+  ship_args "$usage" arg "$@"
   reason=$1; shift
-  case $reason in -*) ship_tooling "$usage" ;; esac
   parse_file "$@"
   take_row "$n"
   is_open "$line" && ship_fail "phase $n is open; close it before skipping it"

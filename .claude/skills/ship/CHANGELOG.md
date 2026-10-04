@@ -7,6 +7,196 @@ released version. See
 
 <!-- version list -->
 
+## v0.16.4 (2026-10-03)
+
+### Bug Fixes
+
+- **ship**: The merge gate closes phase 9 in both lanes
+  ([#466](https://github.com/Gharib89/skills/pull/466),
+  [`054e04a`](https://github.com/Gharib89/skills/commit/054e04a9e4ee52f45aabd382c04661ddcd962146))
+
+
+## v0.16.3 (2026-10-03)
+
+### Bug Fixes
+
+- **ship**: Read-pr carries the PR's draft flag on both hosts
+  ([#460](https://github.com/Gharib89/skills/pull/460),
+  [`9a57b5c`](https://github.com/Gharib89/skills/commit/9a57b5c2d50f0ec34d4a57aa0f58713d3fe6d40f))
+
+
+## v0.16.2 (2026-10-03)
+
+### Bug Fixes
+
+- **ship**: One argument check and login rule; ADO removes a non-last tag
+  ([#457](https://github.com/Gharib89/skills/pull/457),
+  [`551b658`](https://github.com/Gharib89/skills/commit/551b65883a800b9025fc291bc1c5013ae39fcca8))
+
+
+## v0.16.1 (2026-10-03)
+
+### Bug Fixes
+
+- **ship**: Count only the target reviewer's request events in request-review
+  ([#455](https://github.com/Gharib89/skills/pull/455),
+  [`4cc742e`](https://github.com/Gharib89/skills/commit/4cc742e56438093df629ad0d745c16de773ef1c5))
+
+
+## v0.16.0 (2026-10-02)
+
+### Features
+
+- **ship**: Section surgery keeps <details> records intact
+  ([#450](https://github.com/Gharib89/skills/pull/450),
+  [`ff1b53a`](https://github.com/Gharib89/skills/commit/ff1b53a60749387a90836230484359d91e0db6e9))
+
+
+## v0.15.2 (2026-10-02)
+
+### Documentation
+
+- Name the lock as the skill inventory, group the glossary, and hold hard-wrapped prose to 80
+  columns ([#447](https://github.com/Gharib89/skills/pull/447),
+  [`97cd290`](https://github.com/Gharib89/skills/commit/97cd290a2908d0b96d1b39b7766bbb667ebf11af))
+
+
+## v0.15.1 (2026-10-02)
+
+### Bug Fixes
+
+- **ship**: Request-review reads a round in flight as landed
+  ([#446](https://github.com/Gharib89/skills/pull/446),
+  [`a2146b0`](https://github.com/Gharib89/skills/commit/a2146b09bdee6386e53af3307d1dadf423793c45))
+
+
+## v0.15.0 (2026-10-02)
+
+### Features
+
+- The lock decides the skill set, and each check and tool message points to the way forward
+  ([#443](https://github.com/Gharib89/skills/pull/443),
+  [`4af91bb`](https://github.com/Gharib89/skills/commit/4af91bbc5c913ef958d6d591e961133dfc279fbf))
+
+
+## v0.14.2 (2026-09-30)
+
+### Bug Fixes
+
+- **ship**: Nested adapter calls survive RETURN traps; encoded PR lookup; token off argv; installer
+  -f; capped base-fresh log ([#428](https://github.com/Gharib89/skills/pull/428),
+  [`7266a14`](https://github.com/Gharib89/skills/commit/7266a14449df72012123eb22b543ced26f596ff4))
+
+
+## v0.14.1 (2026-09-30)
+
+### Bug Fixes
+
+- **ship**: Let the test suite shorten ci-wait's no-checks grace
+  ([#421](https://github.com/Gharib89/skills/pull/421),
+  [`2589a67`](https://github.com/Gharib89/skills/commit/2589a67edfe628d0554c5986f13f0aa2b03590af))
+
+
+## v0.14.0 (2026-09-30)
+
+### Features
+
+- **ship**: Run the suite in parallel and show every refusal
+  ([#417](https://github.com/Gharib89/skills/pull/417),
+  [`f0510d0`](https://github.com/Gharib89/skills/commit/f0510d0927f3cb7fa0788cb1ca428cf97f6dabed))
+
+
+## v0.13.0 (2026-09-29)
+
+### Features
+
+- **ship**: Move tdd and triage to d81f3a1 and retire CONTEXT.md for GLOSSARY.md
+  ([#411](https://github.com/Gharib89/skills/pull/411),
+  [`4ad593d`](https://github.com/Gharib89/skills/commit/4ad593dbc393d2e5d15046018cb9c8c98c9d2573))
+
+
+## v0.12.0 (2026-09-29)
+
+### Features
+
+- **ship**: Ci-wait and poll-pr grade the latest check run on the expected head
+  ([#397](https://github.com/Gharib89/skills/pull/397),
+  [`8f4c95d`](https://github.com/Gharib89/skills/commit/8f4c95d8f8188909172ae4774379b27317754329))
+
+
+## v0.11.6 (2026-09-29)
+
+### Bug Fixes
+
+- **ship**: Run-file open refuses a phase over an earlier one never flipped
+  ([#392](https://github.com/Gharib89/skills/pull/392),
+  [`4d9c292`](https://github.com/Gharib89/skills/commit/4d9c292d22749b4e445cb23344e11b506d855bbe))
+
+
+## v0.11.5 (2026-09-28)
+
+### Bug Fixes
+
+- **skills**: Keep every skill self-contained, and gate it
+  ([#380](https://github.com/Gharib89/skills/pull/380),
+  [`76934a4`](https://github.com/Gharib89/skills/commit/76934a4d031a8f63229b3c79ea93df4d762b016e))
+
+
+**The renumber to 0.x.** Every entry below predates it and keeps the number it was released under. `ship` was never publicly released, so on 2026-09-28 its version moved from 11.1.4 to 0.11.4: the old major is now the minor. The release run writes new entries above this note, counting on from 0.11.4. See [ADR 0005](https://github.com/Gharib89/skills/blob/main/docs/adr/0005-skills-stay-0x-until-public-release.md).
+
+## v11.1.4 (2026-09-26)
+
+### Bug Fixes
+
+- **skills**: Prompt-audit cleanup of ship and setup-skills prose
+  ([`9b84fb6`](https://github.com/Gharib89/skills/commit/9b84fb6742875c2fd9dda08f0010b31f200bb5ab))
+
+
+## v11.1.3 (2026-09-26)
+
+### Bug Fixes
+
+- **ship**: Merge the base in once the branch is pushed, not rebase
+  ([#332](https://github.com/Gharib89/skills/pull/332),
+  [`5a3ecc4`](https://github.com/Gharib89/skills/commit/5a3ecc44be5d8a65fb71a753ab2616e33a450c62))
+
+
+## v11.1.2 (2026-09-26)
+
+### Bug Fixes
+
+- **ship**: A multi-line thread lead ends in the truncation marker
+  ([#330](https://github.com/Gharib89/skills/pull/330),
+  [`90f2ad5`](https://github.com/Gharib89/skills/commit/90f2ad593da4bc8126e405e34b4941ea03719402))
+
+
+## v11.1.1 (2026-09-26)
+
+### Bug Fixes
+
+- **ship**: Poll-pr --brief --full lifts a clipped thread lead
+  ([#329](https://github.com/Gharib89/skills/pull/329),
+  [`5e05ffc`](https://github.com/Gharib89/skills/commit/5e05ffcb565b863cffd97629147acbd85aedcd04))
+
+
+## v11.1.0 (2026-09-26)
+
+### Features
+
+- **update-skills**: Dated branch, loop-safe installs, retired terms, readable PR body
+  ([#325](https://github.com/Gharib89/skills/pull/325),
+  [`ab84817`](https://github.com/Gharib89/skills/commit/ab84817eeee5d3ba3dec5c12c4f6f9eb27d66a30))
+
+
+## v11.0.1 (2026-09-26)
+
+### Bug Fixes
+
+- **ship**: Preflight prunes only a PR's own leftover worktree
+  ([#324](https://github.com/Gharib89/skills/pull/324),
+  [`6a6ba9b`](https://github.com/Gharib89/skills/commit/6a6ba9b545fb52e7e4b628a246fe6dd995f5d237))
+
+
 ## v11.0.0 (2026-09-26)
 
 ### Bug Fixes

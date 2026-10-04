@@ -9,10 +9,8 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: reflect <issue> <pr>'
 ship_help "$usage" "$@"
-[ -n "${1:-}" ] && [ -n "${2:-}" ] || ship_tooling "$usage"
+ship_args "$usage" "issue pr" "$@"
 n=$1; pr=$2
-case $n in -*) ship_tooling "$usage" ;; esac
-case $pr in -*) ship_tooling "$usage" ;; esac
 [ $# -eq 2 ] || ship_tooling "unknown flag: $3"
 ship_load_host
 url=$(host_pr_get "$pr" | jq -r .url) || ship_tooling "cannot read PR $pr"

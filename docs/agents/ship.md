@@ -84,7 +84,7 @@ Reads: the squash subject
 In-PR requirement: None.
 Subject constraints: Conventional Commits, the type matching the issue's Kind dimension label (`fix`, `feat`, `docs`, `refactor`, `chore`).
 
-`.github/workflows/release.yml` runs semantic-release on a push to `main`, which grades the bump from the squash subject, writes the manifest version, tags `ratelimit-otel--v<version>` and publishes the **release archive** on a GitHub Release for that tag (ADR-0006); `.releaserc.json` has the steps. A PR therefore carries no version edit. `claude plugin tag` runs in the release as the agreement gate: it refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR. The release's prepare step also refuses a first build whose `plugin.json` differs from the manifest it then commits; the zip it uploads is rebuilt from the release commit and passes the same layout check, which the local gate's `archive` gate also runs. The repo carries `.claude-plugin/marketplace.json`, whose entry carries no `version` (CONTEXT.md, **Where this is going**), so today the gate has nothing that can drift. The local gate's `tag` gate runs the same call, so a version added to the entry later fails the PR rather than the release on `main`.
+`.github/workflows/release.yml` runs semantic-release on a push to `main`, which grades the bump from the squash subject, writes the manifest version, tags `ratelimit-otel--v<version>` and publishes the **release archive** on a GitHub Release for that tag (ADR-0006); `.releaserc.json` has the steps. A PR therefore carries no version edit. `claude plugin tag` runs in the release as the agreement gate: it refuses when the manifest and an enclosing marketplace entry disagree, so the two move together in the release commit and never in a PR. The release's prepare step also refuses a first build whose `plugin.json` differs from the manifest it then commits; the zip it uploads is rebuilt from the release commit and passes the same layout check, which the local gate's `archive` gate also runs. The repo carries `.claude-plugin/marketplace.json`, whose entry carries no `version` (GLOSSARY.md, **Where this is going**), so today the gate has nothing that can drift. The local gate's `tag` gate runs the same call, so a version added to the entry later fails the PR rather than the release on `main`.
 
 ## PR
 
@@ -104,7 +104,7 @@ File as an issue labelled `needs-triage`.
 
 ## Docs sync
 
-Targets: README.md, CLAUDE.md, CONTEXT.md, docs/, docs/adr/
+Targets: README.md, CLAUDE.md, GLOSSARY.md, docs/, docs/adr/
 Agent-facing: CLAUDE.md, docs/agents/, .claude/skills/
 
 ## Current docs

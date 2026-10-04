@@ -17,6 +17,12 @@
 # DIFFERENT heading is a section of its own, not a duplicate, and is replaced
 # like any other.
 #
+# A `<details>` block at column 0 is a `<details>` record (a folded changelog,
+# for example): its `## ` lines are not headings to either mode or to the
+# `sections` list, and a section write keeps every record in the old content,
+# verbatim, below the new content (`ship_inert` in _lib.sh). A body file ending
+# inside an open one is refused like an open fence.
+#
 # `--preamble`: the body file is the whole preamble. A preamble is always there,
 # empty at the emptiest, so it is always replaced and the create path is unused.
 # A closing line the old preamble carried and the file does not is carried over,
@@ -34,7 +40,8 @@
 # A body file whose fence state ends open is refused before any host read: an
 # open fence inverts the in-fence state for the rest of the body, so the rewrite
 # reads every later `## ` as example text and swallows the sections between them.
-# A `--preamble` file carrying an unfenced `## ` heading is refused there too:
+# A `--preamble` file carrying a `## ` heading outside a fence or a `<details>`
+# record is refused there too:
 # the preamble is by definition what sits above the first heading, so a heading
 # in it would open a section the write then puts the carried closing line inside.
 #
@@ -47,9 +54,8 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: update-pr-body <pr> (--section <name> | --preamble) --body-file <path>'
 ship_help "$usage" "$@"
-[ -n "${1:-}" ] || ship_tooling "$usage"
+ship_args "$usage" pr "$@"
 pr=$1; shift
-case $pr in -*) ship_tooling "$usage" ;; esac
 section=""; preamble=false; file=""
 while [ $# -gt 0 ]; do
   case $1 in
@@ -64,10 +70,10 @@ if [ "$preamble" = true ]; then
 else
   [ -n "$section" ] || ship_tooling "$usage"
 fi
-[ -f "$file" ] || ship_tooling "$usage"
+[ -n "$file" ] || ship_tooling "$usage"
 content=$(cat "$file") || ship_tooling "cannot read $file"
 unclosed=$(ship_fence_unclosed "$content")
-[ -z "$unclosed" ] || ship_tooling "body file ends inside an unclosed fence ($unclosed)"
+[ -z "$unclosed" ] || ship_tooling "body file ends inside an unclosed fence or <details> record ($unclosed)"
 # Counted, not read: `ship_body_headings` prints the heading TEXT, and a bare
 # `## ` has none, so a non-empty test passes on the one heading most likely to
 # be a typo.
@@ -86,7 +92,7 @@ elif ship_body_replace_section "$body" "$section" "$file" > "$new"; then
 else
   replaced=false; created=true
 fi
-answer=$(host_pr_set_body "$pr" "$new") || ship_fail_host "PR body update failed" "$answer"
+answer=$(host_pr_set_body "$pr" "$new") || ship_fail "PR body update failed" "$answer"
 sections=$(ship_body_headings "$(cat "$new")")
 jq -n --argjson pr "$pr" --arg s "$section" --argjson p "$preamble" \
   --argjson r "$replaced" --argjson c "$created" --arg h "$sections" \

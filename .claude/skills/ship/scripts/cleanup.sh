@@ -14,9 +14,8 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: cleanup <issue|none>'
 ship_help "$usage" "$@"
-[ -n "${1:-}" ] || ship_tooling "$usage"
+ship_args "$usage" "issue|none" "$@"
 n=$1
-case $n in -*) ship_tooling "$usage" ;; esac
 [ $# -eq 1 ] || ship_tooling "unknown flag: $2"
 root=$(ship_main_checkout) || ship_tooling "not inside a git checkout"
 container=$(ship_worktree_container)

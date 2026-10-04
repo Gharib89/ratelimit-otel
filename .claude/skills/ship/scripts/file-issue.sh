@@ -32,6 +32,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot so
 
 usage='usage: file-issue [--repo <owner>/<repo>] --title "<title>" --body-file <path> --label <marker> [--distinct-from <n>[,<n>]]'
 ship_help "$usage" "$@"
+ship_args "$usage" "" "$@"
 argv=("$@")
 title=""; file=""; label=""; exclude="[]"; repo=""
 while [ $# -gt 0 ]; do
@@ -48,7 +49,7 @@ while [ $# -gt 0 ]; do
     *) ship_tooling "unknown flag: $1" ;;
   esac
 done
-[ -n "$title" ] && [ -f "$file" ] || ship_tooling "$usage"
+[ -n "$title" ] && [ -n "$file" ] || ship_tooling "$usage"
 ship_load_host "$repo"
 [ -z "$repo" ] || ship_reach_repo "$repo" "$SHIP_SCRIPTS/file-issue.sh" "${argv[@]}"
 

@@ -1,14 +1,11 @@
 ---
 name: ship
-description: >-
-  Drive one tracker issue to a merge-ready PR in a single run, stopping only at
-  the human merge gate. Use when the user wants to ship an issue, or to run the
-  unattended lane.
+description: Drive one tracker issue to a merge-ready PR in a single run, stopping only at the human merge gate. Use when the user wants to ship an issue, or to run the unattended lane.
 argument-hint: "[issue-number] [--unattended]"
 metadata:
-  version: 11.0.0
+  version: 0.16.4
   profile-schema: 3
-  composes: mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:tdd mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:writing-for-agents mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:code-review upstash/context7#e275a848a420e0d11c2822f61201ee005bfd1133:find-docs humanlayer/skills#ca7c8088db69e315a8b2deea43820270457f8f3c:show-me
+  composes: mattpocock/skills#d81f3a183412e71a5b1e84ca21bc1a35eea03a60:tdd mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:writing-for-agents mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:code-review upstash/context7#e275a848a420e0d11c2822f61201ee005bfd1133:find-docs humanlayer/skills#ca7c8088db69e315a8b2deea43820270457f8f3c:show-me
 ---
 
 # ship
@@ -33,8 +30,8 @@ in the merge summary, so every PR records which ship produced it.
 
 `$ARGUMENTS`:
 
-- `<issue>`: the issue number (work item id on Azure DevOps). Omitted with no
-  flag: ask which issue.
+- `<issue>`: the issue number (work item id on Azure DevOps); `prepare` alone
+  takes none. Omitted with no flag: ask which issue.
 - Free text instead of a number: the task spec itself. No issue fetch, claim,
   `Closes` or reflect, nor the `Done when:` clauses naming them; `none` is the
   issue argument to `preflight`, `isolate`, `open-pr`, `merge` and `cleanup`.
@@ -78,9 +75,9 @@ once its `Done when:` holds, not before.
 mechanic wraps. **Every host write, and every gating read, goes through a
 mechanic**: one no mechanic performs is a **Ship defect** for the merge
 summary's `Ship defects:` row, never a hand-rolled call; merge-gate.md says
-where its draft goes. [reference/mechanics.md](reference/mechanics.md) carries the rule
-in full, the informational reads it admits, the mechanic each phase runs and the
-contract they share, `--help` included.
+where its draft goes. [reference/mechanics.md](reference/mechanics.md) carries
+the rule in full, the informational reads it admits, the mechanic each phase
+runs and the contract they share, `--help` included.
 
 **0 · Isolate.** [reference/isolate.md](reference/isolate.md) carries what
 preflight proves and refuses, the profile it loads and why the worktree is made
@@ -96,14 +93,14 @@ printed, and you **commit as you go**, because the PR needs real commits. A
 **Done when:** `preflight` answered `ok: true`, `isolate` printed its path, and
 any `## Worktree` `Bootstrap:` ran green.
 
-**1 · Understand.** From the `read-issue` result, derive what success looks like
-and write it into the Run file as criteria a later phase can check. A later
-authoritative comment supersedes the body (**spec precedence**,
-[reference/implement.md](reference/implement.md)). Too vague to plan: stop
+**1 · Understand.** Too vague to plan from the `read-issue` result: stop
 `ambiguous`, with no claim taken. Otherwise **claim before any work**:
-`manage-issue <issue> take`. The claim holds until merge; every stop after this
-point follows the stop table.
-**Done when:** `claim: taken`, and the Run file carries the success criteria.
+`manage-issue <issue> take`, held until merge; later stops follow the stop
+table. Then **grep each anchor** the issue cites, rewriting one the tree
+contradicts ([implement.md](reference/implement.md)), and only then write what
+success looks like into the Run file as criteria a later phase can check; a
+later authoritative comment supersedes the body (**spec precedence**).
+**Done when:** `claim: taken`, anchors grepped, the Run file holds the criteria.
 
 **2 · Implement.** [reference/implement.md](reference/implement.md) carries the
 classes, the TDD override, external-claim probes, the judgment/execution split
@@ -134,11 +131,12 @@ and the small lane skip this phase.
 **4 · Sync docs, then self-review.** Docs first, so the review reads the docs
 edits as part of the diff. **Docs-sync fires only when the public surface or
 observable behavior changed**: bring the profile's `Targets:` in line, folding
-the edits into this change, a tracker issue's as a [drafted section](reference/merge-gate.md#a-tracker-issue-on-targets).
-Skip it for internal refactors, a bugfix restoring documented behavior,
-test-only or tooling changes, and comments, and say so in one line at the merge
-gate. **The `writing-for-agents` pass has a trigger of its own**, firing even
-where docs-sync is skipped: whenever the diff touches a target on the profile's
+the edits into this change, a tracker issue's as a
+[drafted section](reference/merge-gate.md#a-tracker-issue-on-targets). Skip it
+for internal refactors, a bugfix restoring documented behavior, test-only or
+tooling changes, and comments, and say so in one line at the merge gate.
+**The `writing-for-agents` pass has a trigger of its own**, firing even where
+docs-sync is skipped: whenever the diff touches a target on the profile's
 `Agent-facing:` line, at the judgment tier, in the `writing` scratch directory,
 over every agent-facing file in the diff. Human prose takes the mechanical pass.
 With docs-sync's edits landed, load `code-review`, then dispatch this pass and
@@ -148,9 +146,11 @@ dispatch the axes, then run this pass inline.
 **Self-review**, unconditional in every lane: invoke `code-review` against the
 diff since `origin/HEAD`, its Standards axis reading the profile's
 `## Coding standards` path, its Spec axis reading the issue, each axis prompt
-carrying its own scratch directory (`standards`, `spec`). **Triage waits for
-every Report file**; one that fails to arrive after the bounded retry is
-`red-after-retry: <axis>`, never a disposition written from memory.
+carrying its own scratch directory (`standards`, `spec`) and saying the Local
+gate runs later in the run, so the axis reads the gate's JSON and never runs
+`check.sh full` or the suite itself. **Triage waits for every Report file**; one
+that fails to arrive after the bounded retry is `red-after-retry: <axis>`, never
+a disposition written from memory.
 **Auto-triage** every finding: harden rather than rip out capability, verify
 nits against the pinned versions, reject known non-issues, fix the valid ones,
 and record a one-line disposition per finding. Two rails on rejecting: a claim
@@ -160,11 +160,11 @@ claim are separate**, so a reviewer citing the wrong commit for a real primitive
 is still right. A valid finding outside the issue is an adjacent find. Then read
 the diff yourself against the depth checks in the coding-standards file the
 Standards axis reads, by their leading words: a vocabulary the change extends, a
-rule-shaped prose change, a prose change to ship's SKILL.md or a reference
-file, new pattern-matching code, a new test run with its fix reverted, a fix
-landed after review. Reviewer rounds find these otherwise, serially, at the cost
-of most of a run's wall time, and the reverted-fix one escapes them entirely.
-This self-review plus green CI is the review gate.
+rule-shaped prose change, new pattern-matching code, a new test run with its fix
+reverted, a fix landed after review, and any the repo adds beside them. Reviewer
+rounds find these otherwise, serially, at the cost of most of a run's wall time,
+and the reverted-fix one escapes them entirely. This self-review plus green CI
+is the review gate.
 **Done when:** every report that fired has its Report file on disk and its path
 in the Run file, every finding carries a disposition, and docs-sync landed or is
 skipped in one line.
@@ -175,11 +175,11 @@ finding carries a disposition; otherwise go back. A gate run while `code-review`
 is still out is paid twice when a finding lands. Run `base-fresh` first: CI
 tests the merge ref, so a branch that predates a merge still goes green while
 every "does this exist?" answer taken from the worktree was pre-merge; behind:
-rebase, re-run, continue. Confirm every `Carry:` file still matches the main
-checkout's copy; a difference is `carried file modified`, because ship has no
-business editing untracked secrets. Then run the gate at the profile's
-`Location:` from the worktree, inline (small lane: small-lane.md). Its verdict is
-one JSON object: `verdict` `pass|fail|unavailable`, per-gate statuses
+follow its advice, re-run, continue. Confirm every `Carry:` file still matches
+the main checkout's copy; a difference is `carried file modified`, because ship
+has no business editing untracked secrets. Then run the gate at the profile's
+`Location:` from the worktree, inline (small lane: small-lane.md). Its verdict
+is one JSON object: `verdict` `pass|fail|unavailable`, per-gate statuses
 `pass|fail|deferred-to-ci|unavailable`, and `gates.secrets` in every lane;
 unparseable output or a missing `secrets` key reads as `unavailable`. `fail`:
 fix loop. `deferred-to-ci`: proceed, the merge summary naming each deferred
@@ -214,7 +214,11 @@ returned is replied to and resolved per `Resolve:`, every section the rounds
 grew is rewritten, and `read-pr` shows a `## Review` line per reviewer.
 
 **8 · CI.** CI runs from PR-open and overlaps phase 7; `ci-wait <pr>` covers it,
-reading the profile's `Legs:`. On `conflict`, its stderr carries the recovery.
+reading the profile's `Legs:`. `ci-wait` and `poll-pr` wait for the expected
+head, `--sha <sha>` else the worktree's `HEAD` when it is on the PR's branch, so
+a read straight after a push never grades the previous head. A `timeout` whose
+`head_sha` is not that head means the host never showed the push: confirm it
+landed, then re-run. On `conflict`, its stderr carries the recovery.
 `no-checks` is fine only where `No-checks legal:` says so. A red leg named on a
 verification's `Also proven by CI:` line is that verification failing: back to
 phase 2. Red after the reviewers exited: fix, push, proceed on green. Honour
@@ -232,11 +236,12 @@ near miss is asked back. On approval run `merge <pr> <issue|none> [--worktree
 and a Ship defect draft is filed only on a word of its own; a nonzero
 exit, or a `false` in `merge`'s or `cleanup`'s JSON, re-runs the mechanic that
 owns the step, and a step no mechanic re-does is a Ship defect for the summary.
-Unattended: `comment-pr <pr> --body-file` with the summary, and return.
+Unattended: `comment-pr <pr> --body-file` with the summary. Either lane then
+closes the phase, `run-file close 9` and its task to the `mirror`, and returns.
 **Done when:** attended, `merge`, every `update-issue-body` and `cleanup` exited
 0 with no `false`, and every Ship defect draft is filed, answered with
-candidates, carries its `command` on the row, or was declined; unattended, `comment-pr` posted and the run returned the PR
-link.
+candidates, carries its `command` on the row, or was declined; unattended,
+`comment-pr` posted.
 
 ## The stops
 
@@ -267,7 +272,7 @@ hold around that:
 | Local gate verdict `unavailable` | `local gate unavailable: <gates>` | attended: ask; unattended: hand back |
 | Carried file changed | `carried file modified: <file>` | attended: ask; unattended: hand back |
 | Red after retries | `red-after-retry: <what>` | attended: ask; unattended: hand back |
-| The branch fell behind its base before the merge | `stale-base: behind <n> on <base>` | attended: holds while you rebase; unattended: hand back |
+| The branch fell behind its base before the merge | `stale-base: behind <n> on <base>` | attended: holds while you merge the base in; unattended: hand back |
 | The PR is closed at the merge gate | `pr-closed: <state>` | attended: ask; unattended: hand back |
 | `prepare` failed its Cloud lane `Bootstrap:` | `bootstrap-failed` | no claim |
 | Open PRs at or above the profile's `PR cap:` | `pr-queue-full` | no claim |

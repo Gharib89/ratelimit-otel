@@ -67,7 +67,7 @@ _gh() {
   # The body goes out only on a success. A failed call's body is an error
   # document nothing here reads, and `_gh_create` prints its own JSON after
   # this returns, so emitting both would hand the caller two JSON values where
-  # `ship_fail_host` expects one.
+  # `ship_fail` expects one.
   if [ "$rc" -eq 0 ]; then
     [ -n "$raw" ] && printf '%s\n' "$raw" | awk -v want=body "$_GH_AWK_SPLIT"
   else
@@ -77,7 +77,7 @@ _gh() {
   return $rc
 }
 
-# A failed host call answers with its status, so `ship_fail_host` can tell "the
+# A failed host call answers with its status, so `ship_fail` can tell "the
 # host refused this" from "the host is down". `_gh` leaves the status in a
 # variable, and a pipeline element and a `$( )` are both subshells where one
 # dies unread, so both helpers below print it instead. The `( )` is what makes
@@ -119,7 +119,7 @@ api() {
     # `gh` spells a stdin payload either `--input -` or `--input=-`.
     if { [ "$prev" = --input ] && [ "$a" = - ]; } || [ "$a" = --input=- ]; then
       buf=$(mktemp) || return 2
-      trap 'rm -f "$buf"' RETURN
+      trap 'rm -f "$buf"; trap - RETURN' RETURN
       cat > "$buf"
       case $a in --input=-) a=--input=$buf ;; *) a=$buf ;; esac
     fi
@@ -160,10 +160,9 @@ api() {
 # Switching on the host's answer rather than on the environment keeps the
 # sandbox out of the adapter's logic, and a run outside it never meets the
 # refusal, so it never makes a `ccr` call.
-_gh_gql_marker() { printf '%s/ship-gh-graphql-refused.%s.%s' "${TMPDIR:-/tmp}" "${UID:-0}" "$$"; }
 gql() {
   local err rc attempt m
-  m=$(_gh_gql_marker)
+  m="${TMPDIR:-/tmp}/ship-gh-graphql-refused.${UID:-0}.$$"
   [ -d "$m" ] && [ ! -L "$m" ] && [ -O "$m" ] && return 3
   for attempt in 1 2; do
     # stderr into $err, stdout on to the caller, through fd 3.
@@ -288,13 +287,12 @@ host_issue_linked_prs() {
 }
 host_issue_assign()   { api -X POST   "$R/issues/$1/assignees" -f "assignees[]=$2" >/dev/null; }
 host_issue_unassign() { api -X DELETE "$R/issues/$1/assignees" -f "assignees[]=$2" >/dev/null; }
-host_issue_has_label(){ api "$R/issues/$1/labels" --jq '.[].name' | grep -qxF -- "$2"; }
 host_issue_add_label(){ api -X POST "$R/issues/$1/labels" -f "labels[]=$2" >/dev/null; }
 # Check first: a DELETE 404s the same way whether the label was already gone or
 # the call itself failed, and a removal reported on a label still there is
 # exactly the residue this exists to stop.
 host_issue_remove_label() {
-  host_issue_has_label "$1" "$2" || return 0
+  ship_issue_has_label "$1" "$2" || return 0
   api -X DELETE "$R/issues/$1/labels/$(jq -rn --arg l "$2" '$l | @uri')" >/dev/null
 }
 # A create, so it is create-then-verify: a 5xx may have landed the comment, and a
@@ -304,7 +302,7 @@ host_issue_remove_label() {
 host_issue_comment() {
   local f out rc
   f=$(mktemp) || return 2
-  trap 'rm -f "$f"' RETURN
+  trap 'rm -f "$f"; trap - RETURN' RETURN
   printf '%s' "$2" > "$f"
   out=$(host_pr_comment "$1" "$f"); rc=$?
   [ "$rc" -eq 0 ] || printf '%s\n' "$out"
@@ -363,16 +361,16 @@ host_issue_create() { # <title> <body-file> <label>
 # rewrite of that section drops it. A body with no heading has no section to
 # fall inside, so it keeps the append.
 #
-# Fenced blocks are skipped by `SHIP_AWK_FENCE`, matching the model
-# `ship_body_closes` uses: a `## ` inside a fence is example text, and a closing
-# line printed into a fence renders as code, so the host registers no link and
-# the keyword test that gates a re-run reads false.
+# Fenced blocks and `<details>` records are skipped by `ship_inert`, matching
+# the fence model `ship_body_closes` uses: a `## ` inside a fence is example
+# text, and a closing line printed into a fence renders as code, so the host
+# registers no link and the keyword test that gates a re-run reads false.
 # The heading match stays anchored at column 0 on purpose: it has to agree
 # with `update-pr-body`, whose `^## ` is what decides a section boundary.
 _gh_add_closes() { # <body> <issue>
   awk -v n="$2" "$SHIP_AWK_FENCE"'
-    { fenced = ship_fence($0) }
-    !placed && !fenced && /^## / { print "Closes #" n; print ""; placed = 1 }
+    { inert = ship_inert($0) }
+    !placed && !inert && /^## / { print "Closes #" n; print ""; placed = 1 }
     { print }
     END { if (!placed) printf "\nCloses #%s\n", n }' <<<"$1"
 }
@@ -391,36 +389,54 @@ host_pr_create() { # <head> <base> <title> <body-file> <issue>
       | _gh_create -X POST "$R/pulls" --input - --jq '{number, url: .html_url, created_at}'
   }
   _pr_find() {
-    api "$R/pulls?state=open&head=$SHIP_OWNER:$head" --jq 'first | select(. != null) | {number, url: .html_url, created_at}'
+    api "$R/pulls" -X GET -f state=open -f "head=$SHIP_OWNER:$head" --jq 'first | select(. != null) | {number, url: .html_url, created_at}'
   }
   _gh_create_verify _pr_post _pr_find
 }
 
 host_pr_get() {
   api "$R/pulls/$1" --jq '{number, url: .html_url, title, body: (.body // ""),
-    head_sha: .head.sha, head_ref: .head.ref, base_ref: .base.ref,
+    head_sha: .head.sha, head_ref: .head.ref, base_ref: .base.ref, draft,
     state: (if .merged then "merged" elif .state == "open" then "open" else "closed" end),
     mergeable: (if .mergeable_state == "dirty" then "conflict"
                 elif .mergeable == true then "clean" else "unknown" end)}'
 }
 
 host_pr_for_branch() { # <branch>
-  api "$R/pulls?state=all&head=$SHIP_OWNER:$1&sort=created&direction=desc&per_page=1" \
-    --jq 'first | if . == null then null else {number, state: (if .merged_at != null then "merged" elif .state == "open" then "open" else "closed" end)} end'
+  api "$R/pulls" -X GET -f state=all -f "head=$SHIP_OWNER:$1" -f sort=created -f direction=desc -f per_page=1 \
+    --jq 'first | if . == null then null else {number, state: (if .merged_at != null then "merged" elif .state == "open" then "open" else "closed" end),
+      head_sha: .head.sha} end'
 }
 
-# Check runs plus classic commit statuses, one row per name, latest wins.
+# Check runs plus classic commit statuses, one row per name, latest wins. Within
+# a name, the latest check run is the latest created, by id: a cancellation can
+# complete after its successor started, so a time rule prefers the cancelled row.
+# A `cancelled` check run whose workflow has a newer workflow run on this head was
+# superseded by its concurrency group, and its successor can have no check run
+# yet (#394): it reads `pending` until the successor's own row outranks it by id.
+# A successor is a newer run still going, or one that wrote a row of this name.
+# One cancelled with no successor, or no workflow behind it, is a failure.
 host_pr_checks() { # <pr> <head_sha>
-  local sha=$2 runs statuses
-  runs=$(api "$R/commits/$sha/check-runs" --paginate --jq '.check_runs[] | {name,
+  local sha=$2 runs statuses wruns='[]'
+  runs=$(api "$R/commits/$sha/check-runs" --paginate --jq '.check_runs[] | {id, name,
+      suite: .check_suite.id, cancelled: (.conclusion == "cancelled"),
       status: (if .status != "completed" then "pending"
                elif (.conclusion | IN("success","neutral","skipped")) then "success"
                else "failure" end), at: (.completed_at // .started_at // "")}' | jq -s .) || return 1
+  if jq -e 'any(.[]; .cancelled)' <<<"$runs" >/dev/null; then
+    wruns=$(api "$R/actions/runs?head_sha=$sha&per_page=100" --paginate \
+      --jq '.workflow_runs[] | {id, workflow_id, suite: .check_suite_id, done: (.status == "completed")}' | jq -s .) || return 1
+  fi
   statuses=$(api "$R/commits/$sha/status" --jq '.statuses[] | {name: .context,
       status: (if .state == "success" then "success" elif .state == "pending" then "pending" else "failure" end),
       at: .updated_at}' | jq -s .) || return 1
-  jq -n --argjson a "$runs" --argjson b "$statuses" \
-    '$a + $b | group_by(.name) | map(max_by(.at) | {name, status})'
+  jq -n --argjson a "$runs" --argjson b "$statuses" --argjson wruns "$wruns" '
+    def superseded: . as $r | ($wruns | map(select(.suite == $r.suite)) | first) as $w
+      | $w != null and any($wruns[]; .workflow_id == $w.workflow_id and .id > $w.id
+          and ((.done | not) or (.suite as $s | any($a[]; .suite == $s and .name == $r.name))));
+    ($a | map(if .cancelled and superseded then .status = "pending" else . end)
+        | group_by(.name) | map(max_by(.id))) + $b
+    | group_by(.name) | map(max_by(.at) | {name, status})'
 }
 
 # `on_head` is keyed to the current head (a review on an older commit does not
@@ -503,12 +519,11 @@ host_pr_threads() {
 # states it either as a review of its own or as a PR comment (Copilot did the
 # former on PR #154, three times), so both surfaces merge into one time-sorted
 # list and the latest notice wins whichever way it arrived.
-# The login is compared the way `SHIP_LANDED_BY` compares it, so a `Login:` typed
+# The login is compared through `SHIP_LOGIN_NORM`, so a `Login:` typed
 # in another case cannot land rounds here and report blocked nowhere.
 # The notice carries the time its row was posted, which is what poll-pr's since
 # rule reads for a comment (#256).
-_gh_blocked_select="$SHIP_BLOCKED_NOTICE"'
-  def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+_gh_blocked_select="$SHIP_BLOCKED_NOTICE$SHIP_LOGIN_NORM"'
   [sort_by(.at)[] | select((.login | norm) == ($l | norm)) | .at as $at
    | (.body // "") | notice_lines | {line: ., at: $at}]
   | last // null'
@@ -554,7 +569,7 @@ _gh_run_list() { # <workflow-file> <since-iso>
 host_workflow_runs() { # <workflow-file> <since-iso>
   local err rc wf=${1##*/}
   err=$(mktemp) || return 2
-  trap 'rm -f "$err"' RETURN
+  trap 'rm -f "$err"; trap - RETURN' RETURN
   _gh_run_list "$wf" "$2" 2>"$err"; rc=$?
   # The flat one retry `gql` keeps rather than `api`'s backoff: a read that
   # answers non-zero reports the reviewer unreachable, and this CLI family is the
@@ -588,10 +603,14 @@ host_run_denials() { # <run-url>
       else error("a claude-review warning leads with no count") end' <<<"$ann"
 }
 
-# The PR's review_requested events, oldest first, as {login, created_at}.
-_gh_requested_events() { # <pr>
+# The PR's review events, oldest first, as {event, login, created_at}: each
+# review_requested and review_request_removed under the reviewer it names, and
+# each review under its author.
+_gh_review_events() { # <pr>
   api "$R/issues/$1/timeline" --paginate \
-    --jq '.[] | select(.event == "review_requested") | select(.requested_reviewer.login) | {login: .requested_reviewer.login, created_at}' \
+    --jq '.[] | select(.event == "review_requested" or .event == "review_request_removed" or .event == "reviewed")
+      | {event, login: (if .event == "reviewed" then .user.login else .requested_reviewer.login end), created_at: (.created_at // .submitted_at)}
+      | select(.login)' \
     | jq -s .
 }
 
@@ -601,7 +620,7 @@ _gh_alias() { [ "$1" = "$(host_copilot_login)" ] && printf '%s' "$_gh_copilot_re
 # given $l, its login, and $alias from `_gh_alias`: the login less a `[bot]`
 # suffix (github-actions[bot] reads back as github-actions), or the alias
 # (Copilot), in any case.
-_gh_recorded_def='def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+_gh_recorded_def="$SHIP_LOGIN_NORM"'
   def recorded: norm as $r | [$l, $alias | select(. != "") | norm] | index($r) != null;'
 
 # Request, then read the request back off the host's own record: the login you
@@ -611,18 +630,19 @@ _gh_recorded_def='def norm: ascii_downcase | sub("\\[bot\\]$"; "");
 # and an empty requested_reviewers list proves nothing once the bot has posted.
 host_pr_request_review() { # <pr> <login>
   local pr=$1 login=$2 ok=false before after pending readback now
-  before=$(_gh_requested_events "$pr") || before='[]'
+  before=$(_gh_review_events "$pr") || before='[]'
   # Stamped before the POST, so a review submitted the instant the request lands
   # is still at-or-after the fallback requested_at.
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   api -X POST "$R/pulls/$pr/requested_reviewers" -f "reviewers[]=$login" >/dev/null && ok=true
   sleep 2
-  after=$(_gh_requested_events "$pr") || after='[]'
+  after=$(_gh_review_events "$pr") || after='[]'
   pending=$(api "$R/pulls/$pr" --jq '.requested_reviewers[].login' | jq -R . | jq -s .)
-  readback=$( { jq -r '.[]' <<<"$pending"; jq -r '.[].login' <<<"$after"; } | jq -R . | jq -s 'unique')
-  # The request landed if the timeline gained a review_requested event during
-  # this call, or if the reviewer is pending on `requested_reviewers` now under
-  # any name it is recorded as (`recorded`).
+  readback=$( { jq -r '.[]' <<<"$pending"; jq -r '.[] | select(.event == "review_requested") | .login' <<<"$after"; } | jq -R . | jq -s 'unique')
+  # The request landed if the timeline gained a review_requested event for the
+  # reviewer during this call, or if the reviewer is pending on
+  # `requested_reviewers` now, under any name it is recorded as (`recorded`)
+  # either way: another reviewer's request in the same window is not this one.
   # The timeline can lag the wait above, so the pending list alone must be
   # enough, or a landed request reads as never-queued. The match reads the
   # pending list and not the timeline's logins, which keep every earlier
@@ -632,11 +652,25 @@ host_pr_request_review() { # <pr> <login>
   # lands after this call's `requested_at` and is what the caller waits for:
   # already pending counts as landed. The timeline is chronological, so a new
   # event is the last one.
+  # A round in flight counts as well, whatever the POST answered: before the
+  # POST, the reviewer's last review event was a request, neither answered nor
+  # withdrawn, and no withdrawal ends the call. GitHub drops a reviewer from the
+  # pending list once it starts reviewing and a re-request writes no event, so a
+  # Copilot ruleset's PR-open round reads that way while Copilot is mid-review,
+  # and its request's time is the round's `requested_at` (#444). Read off the
+  # timeline before the POST, so a review that lands during the call still
+  # counts. An answered request is followed by its review, so an earlier round
+  # never reads as this one.
   jq -n --argjson ok "$ok" --argjson b "$before" --argjson a "$after" --argjson p "$pending" --argjson rb "$readback" --arg l "$login" --arg alias "$(_gh_alias "$login")" --arg now "$now" \
     "$_gh_recorded_def"'
-     {requested: ($ok and (($a | length) > ($b | length) or any($p[]; recorded))),
-      readback: $rb,
-      requested_at: (if ($a | length) > ($b | length) then ($a[-1].created_at // $now) else $now end)}'
+     def requests: map(select(.event == "review_requested" and (.login | recorded)));
+     ($a | requests) as $ar | (($ar | length) > ($b | requests | length)) as $new
+     | def last_of: [.[] | select(.login | recorded)] | last;
+     ($b | last_of) as $lb
+     | ($lb.event == "review_requested" and ($a | last_of).event != "review_request_removed") as $open
+     | {requested: (($ok and ($new or any($p[]; recorded))) or $open),
+        readback: $rb,
+        requested_at: (if $new then ($ar[-1].created_at // $now) elif $open then $lb.created_at else $now end)}'
 }
 
 host_pr_comment() { # <pr> <body-file>
@@ -649,7 +683,7 @@ host_pr_comment() { # <pr> <body-file>
   }
   _gh_create_verify _comment_post _comment_find
 }
-# Nothing on success, {"status": <n|null>} on failure: the caller's `ship_fail_host`
+# Nothing on success, {"status": <n|null>} on failure: the caller's `ship_fail`
 # turns that into the verdict.
 host_pr_set_body() { jq -n --rawfile b "$2" '{body: $b}' | _gh_write -X PATCH "$R/pulls/$1" --input -; }
 host_pr_set_title() { jq -n --arg t "$2" '{title: $t}' | _gh_write -X PATCH "$R/pulls/$1" --input -; }
