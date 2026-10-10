@@ -20,21 +20,21 @@ jobs:
   review:
     # An issue_comment fires on issues too, so the PR test comes first. A run
     # that starts and finds nothing to review still costs minutes and still
-    # shows up in the Actions tab as a review that happened. No commenter test:
-    # the identity a run requests a round under has to pass whatever this `if:`
-    # says, and an `if:` that declines it costs the round. Ship grades that
-    # `never-queued`, whether the host records no run or one concluded
-    # `skipped`, so the loss is named rather than silent; naming it is not
-    # reviewing the PR, which is what this reviewer is for. The checklist's
-    # "Decide who may spend the token" step is where that is narrowed on
-    # purpose. The PR author is tested instead: the round runs on the Claude
-    # app's installation token, which `permissions:` does not narrow, so an
-    # outsider's PR text must not reach it. The on-push shape's fork skip,
-    # there for the secret, has the same effect.
+    # shows up in the Actions tab as a review that happened. The commenter is
+    # tested, because this repo is public and a drive-by `@claude` would
+    # otherwise spend the token: the owner narrowed it on purpose (setup-skills
+    # reviewer checklist, "Decide who may spend the token"). The identity a
+    # ship run requests a round under must stay inside that list: an `if:`
+    # that declines it costs the round, which ship grades `never-queued`
+    # rather than silent, and naming the loss is not reviewing the PR. The PR
+    # author is tested as well: the round runs on the Claude app's
+    # installation token, which `permissions:` does not narrow, so an
+    # outsider's PR text must not reach it.
     if: >-
       github.event.issue.pull_request != null &&
       contains(github.event.comment.body, '@claude') &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association) &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     steps:
       # Not optional: the action runs `git diff ... HEAD` in the workspace
