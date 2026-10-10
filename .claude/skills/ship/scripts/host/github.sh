@@ -64,6 +64,9 @@ _gh() {
   err=$(mktemp) || return 2
   raw=$(gh api -i "$@" 2>"$err"); rc=$?
   SHIP_HTTP_STATUS=$(printf '%s\n' "$raw" | awk -v want=status "$_GH_AWK_SPLIT")
+  # A poll loop's read cannot see this variable from inside a `$( )`, so the
+  # status also goes where `ship_poll_read` reads it.
+  [ -z "${SHIP_HTTP_STATUS_FILE:-}" ] || printf '%s' "$SHIP_HTTP_STATUS" > "$SHIP_HTTP_STATUS_FILE"
   # The body goes out only on a success. A failed call's body is an error
   # document nothing here reads, and `_gh_create` prints its own JSON after
   # this returns, so emitting both would hand the caller two JSON values where
@@ -439,6 +442,39 @@ host_pr_checks() { # <pr> <head_sha>
     | group_by(.name) | map(max_by(.at) | {name, status})'
 }
 
+# The re-runnable job behind a check: an Actions job's id is its check run's id,
+# so the latest check run of that name on the head names the job, and the job
+# says how many times it has run (run_attempt, 1 until a re-run). A check run
+# some other app wrote is no Actions job, and its id would 404 on the jobs
+# routes, so it answers nulls rather than failing: there is nothing to re-run,
+# which is not the host being down. The log is a courtesy for the run reading
+# why the check failed, so a log that cannot be read (expired, still running)
+# leaves log_tail null and does not fail the call.
+host_check_job() { # <pr> <head_sha> <name>
+  local cr id attempt log esc bel
+  esc=$(printf '\033') bel=$(printf '\007')
+  cr=$(api "$R/commits/$2/check-runs" -X GET -f "check_name=$3" -f per_page=100 \
+    --jq '.check_runs | max_by(.id) // empty | {id, actions: (.app.slug == "github-actions")}') || return 1
+  [ -n "$cr" ] || return 1
+  if ! jq -e .actions <<<"$cr" >/dev/null; then
+    printf '{"job_id":null,"attempt":null,"log_tail":null}\n'; return 0
+  fi
+  id=$(jq -r .id <<<"$cr")
+  attempt=$(api "$R/actions/jobs/$id" --jq .run_attempt) || return 1
+  # A job log carries colour codes, which the endpoint refuses to hand over
+  # unless asked; they are stripped (CSI, then OSC ended by BEL; the C locale,
+  # since `[@-~]` is no byte range in a UTF-8 one) so the tail is
+  # text and not escapes inside a JSON string.
+  if log=$(api "$R/actions/jobs/$id/logs" --allow-escape-sequences 2>/dev/null); then
+    log=$(printf '%s\n' "$log" | tail -n 40 | LC_ALL=C sed -e "s/$esc\][^$bel]*$bel//g" -e "s/$esc\[[0-9;?]*[@-~]//g")
+  else log=; fi
+  jq -n --argjson id "$id" --argjson a "$attempt" --arg l "$log" \
+    '{job_id: $id, attempt: $a, log_tail: (if $l == "" then null else $l end)}'
+}
+# Re-runs the one job, not the whole workflow run, so a leg's other jobs keep
+# their results. Nothing on success, the status on failure, like every write.
+host_check_rerun() { _gh_write -X POST "$R/actions/jobs/$1/rerun"; } # <job_id>
+
 # `on_head` is keyed to the current head (a review on an older commit does not
 # count), which poll-pr's default head rule reads; `all` carries every round
 # across heads, for its --since rule. Every review stays in the two lists with
@@ -551,33 +587,45 @@ host_pr_reviewer_blocked() { # <pr> <login>
 # sharing a title therefore match each other's runs, which costs the poll time
 # and no more, and a title rewritten between the request and the poll matches
 # nothing, which reads as `never-queued`.
-# `gh run list` rather than `api`: it builds the `--created` search itself, and
-# a read that returns nothing is an answer here rather than a failure. `--limit`
-# truncates a set `--created` has already bounded to the poll's own window, so
-# it is set far above the runs one such window can hold rather than at the page
-# size: a truncated read drops the run the poll is waiting on and reads as
-# `never-queued`. Its stderr is tailed the way `_gh` tails its own,
-# because a CLI diagnostic is unbounded and the caller prints one JSON object.
-_gh_run_list() { # <workflow-file> <since-iso>
-  gh run list --repo "$SHIP_REPO_SLUG" --workflow "$1" --event issue_comment --created ">=$2" --limit 200 \
-    --json status,conclusion,createdAt,url,displayTitle \
-    --jq 'map({status, conclusion, created_at: .createdAt, url, title: .displayTitle})'
+#
+# The event and the window are filtered by `host_workflow_runs`' jq, not by the
+# host: a list filtered by `--event` or `--created` can leave a live run out for
+# minutes while the same workflow's unfiltered list carries it, and the missing
+# run reads as `never-queued` for a reviewer still running (#496).
+# `gh run list` rather than `api --paginate`, and one page of 100, because the
+# cloud sandbox's proxy refuses the numeric-ID URL GitHub's `Link` header names
+# for page two. The list is newest first, so a full page drops the oldest runs,
+# and one page spanned five days of this repo's runs on 2026-10-07.
+_gh_run_list() { # <workflow-file>
+  gh run list --repo "$SHIP_REPO_SLUG" --workflow "$1" --limit 100 \
+    --json status,conclusion,createdAt,url,displayTitle,event
 }
 # GitHub knows a workflow by its file name, and answers the repo-relative path
 # the profile's `Workflow:` carries with a 404; every workflow sits flat in
 # `.github/workflows/`, so the name alone is unambiguous.
 host_workflow_runs() { # <workflow-file> <since-iso>
-  local err rc wf=${1##*/}
+  local err out rc wf=${1##*/}
   err=$(mktemp) || return 2
   trap 'rm -f "$err"; trap - RETURN' RETURN
-  _gh_run_list "$wf" "$2" 2>"$err"; rc=$?
+  out=$(_gh_run_list "$wf" 2>"$err"); rc=$?
   # The flat one retry `gql` keeps rather than `api`'s backoff: a read that
   # answers non-zero reports the reviewer unreachable, and this CLI family is the
   # one the header names as flaking 401 mid-session, so a bad second would
   # otherwise be read as evidence about a reviewer that is working.
-  if [ "$rc" -ne 0 ]; then sleep 2; : > "$err"; _gh_run_list "$wf" "$2" 2>"$err"; rc=$?; fi
-  [ "$rc" -eq 0 ] || ship_tail40 "$err"
-  return $rc
+  if [ "$rc" -ne 0 ]; then sleep 2; : > "$err"; out=$(_gh_run_list "$wf" 2>"$err"); rc=$?; fi
+  # The stderr is tailed the way `_gh` tails its own, because a CLI diagnostic is
+  # unbounded and the caller prints one JSON object.
+  [ "$rc" -eq 0 ] || { ship_tail40 "$err"; return $rc; }
+  # A full page whose oldest run is still inside the window may have cut off the
+  # run the poll awaits, so the read fails rather than answer without it. An
+  # empty list is still an answer (no run yet), and an empty or unparseable
+  # output is not, which `-e` makes a failure.
+  if jq -e --arg s "$2" 'length >= 100 and .[-1].createdAt >= $s' <<<"$out" >/dev/null; then
+    echo "run list for $wf holds 100 runs inside the window since $2: the oldest may be cut off" >&2
+    return 1
+  fi
+  jq -ce --arg s "$2" 'map(select(.event == "issue_comment" and .createdAt >= $s)
+    | {status, conclusion, created_at: .createdAt, url, title: .displayTitle})' <<<"$out"
 }
 
 # The scaffolded Claude reviewer job raises one warning annotation titled
@@ -601,6 +649,26 @@ host_run_denials() { # <run-url>
   jq -sc '[.[] | select(.annotation_level == "warning" and .title == "claude-review") | .message]
     | if all(test("^\\s*[0-9]")) then {denied: (map(capture("^\\s*(?<n>[0-9]+)").n | tonumber) | add // 0)}
       else error("a claude-review warning leads with no count") end' <<<"$ann"
+}
+
+# What a reviewer integration with no workflow run leaves on the PR, for
+# poll-pr to read its round status from: the PR's comments and the reactions on
+# the PR and on the request comment. A PR's conversation comments and reactions
+# are its issue's on this host. The request comment is the latest one opening
+# with the phrase at or after <since>, the comment `request-review` posted.
+host_pr_native_activity() { # <pr> <since-iso> <phrase>
+  local comments pr_r req_r='[]' id
+  comments=$(api "$R/issues/$1/comments" --paginate \
+    --jq '.[] | {id, login: .user.login, created_at, updated_at, body, url: .html_url}' | jq -s .) || return 1
+  pr_r=$(api "$R/issues/$1/reactions" --paginate --jq '.[] | {content, login: .user.login, created_at}' | jq -s .) || return 1
+  id=$(jq -r --arg s "$2" --arg p "$3" \
+    '[.[] | select(.created_at >= $s and ((.body // "") | startswith($p)))] | last | .id // empty' <<<"$comments") || return 1
+  if [ -n "$id" ]; then
+    req_r=$(api "$R/issues/comments/$id/reactions" --paginate \
+      --jq '.[] | {content, login: .user.login, created_at}' | jq -s .) || return 1
+  fi
+  jq -n --argjson c "$comments" --argjson p "$pr_r" --argjson r "$req_r" \
+    '{comments: $c, pr_reactions: $p, request_reactions: $r}'
 }
 
 # The PR's review events, oldest first, as {event, login, created_at}: each
@@ -671,6 +739,24 @@ host_pr_request_review() { # <pr> <login>
      | {requested: (($ok and ($new or any($p[]; recorded))) or $open),
         readback: $rb,
         requested_at: (if $new then ($ar[-1].created_at // $now) elif $open then $lb.created_at else $now end)}'
+}
+
+# The latest instant a round was asked of <login>, for a caller that holds no
+# `requested_at` of its own: the last `review_requested` event on the timeline
+# under any name the reviewer is recorded as, or, under a comment transport
+# (<phrase>), the last PR comment opening with the phrase, by anyone, since the
+# request reads the same whoever posted it. Nothing and non-zero where there is none.
+host_pr_requested_at() { # <pr> <login> [<phrase>]
+  local at raw
+  if [ -n "${3:-}" ]; then
+    raw=$(api "$R/issues/$1/comments?per_page=100" --paginate --jq '.[]') || return 1
+    at=$(jq -rs --arg p "$3" '[.[] | select(.body | startswith($p))] | last | .created_at // empty' <<<"$raw") || return 1
+  else
+    raw=$(_gh_review_events "$1") || return 1
+    at=$(jq -r --arg l "$2" --arg alias "$(_gh_alias "$2")" "$_gh_recorded_def"'
+          [.[] | select(.event == "review_requested" and (.login | recorded))] | last | .created_at // empty' <<<"$raw") || return 1
+  fi
+  [ -n "$at" ] && printf '%s\n' "$at"
 }
 
 host_pr_comment() { # <pr> <body-file>

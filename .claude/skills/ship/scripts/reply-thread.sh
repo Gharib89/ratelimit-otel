@@ -18,9 +18,12 @@ ship_args "$usage" "pr arg" "$@"
 pr=$1 thread=$2; shift 2
 [ "${1:-}" = --body-file ] && [ $# -eq 2 ] || ship_tooling "$usage"
 ship_load_host
+f=$(mktemp) || ship_tooling "cannot write the reply"
+trap 'rm -f "$f"' EXIT
+ship_mark_file "$2" "$f" || ship_tooling "cannot read $2"
 # A failed call still says why: the adapter prints its own {replied:false, detail}
 # and this keeps it, so "unavailable" reaches the run rather than a bare exit 1.
-if out=$(host_pr_reply_thread "$pr" "$thread" "$2"); then
+if out=$(host_pr_reply_thread "$pr" "$thread" "$f"); then
   jq --argjson pr "$pr" --arg t "$thread" '{pr: $pr, thread: $t} + .' <<<"$out"
 else
   detail=$(jq -c . <<<"$out" 2>/dev/null) || detail=null

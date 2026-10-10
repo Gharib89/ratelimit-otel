@@ -21,7 +21,8 @@
 #
 # `none` as the issue argument is the task-spec run: there is no issue to read,
 # so the issue block is skipped and `none` is the literal branch and worktree
-# suffix. Every other check runs unchanged.
+# suffix. Every other check runs unchanged, bar the existing-branch one: two
+# free-text runs are not the same run, so a `*-none` branch is no reason.
 #
 # stdout: {host, repo, identity, profile, ok, reasons[], mentions[], mentioned_by[],
 #          pruned[], reviewers[]}
@@ -65,6 +66,7 @@ unreachable() { # <detail>
   jq -n --arg h "$SHIP_HOST" --arg r "$SHIP_REPO_SLUG" --argjson id "$identity" --arg d "$1" \
     '{host: $h, repo: $r, identity: $id, ok: false, reasons: ["host-unreachable: " + $d],
       mentions: [], mentioned_by: [], pruned: [], reviewers: []}'
+  printf 'host-unreachable: %s\n' "$1" >&2
   exit 2
 }
 
@@ -207,9 +209,13 @@ else
   fi
 fi
 
-br=$(git -C "$root" ls-remote --heads origin "*-$n" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||' | paste -sd, -) \
-  || reasons+=("existing branch: remote unreadable, cannot prove none")
-[ -z "$br" ] || reasons+=("existing branch: $br")
+# A free-text run has no number to match: its `<type>/<slug>-none` branch would
+# collide with any earlier free-text run's, and two of those are not one run.
+if [ "$n" != none ]; then
+  br=$(git -C "$root" ls-remote --heads origin "*-$n" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||' | paste -sd, -) \
+    || reasons+=("existing branch: remote unreadable, cannot prove none")
+  [ -z "$br" ] || reasons+=("existing branch: $br")
+fi
 
 for wt in "$container"/*-"$n"/; do
   [ -d "$wt" ] && reasons+=("worktree exists: ${wt%/}")

@@ -15,5 +15,8 @@ ship_args "$usage" pr "$@"
 pr=$1; shift
 [ "${1:-}" = --body-file ] && [ $# -eq 2 ] || ship_tooling "$usage"
 ship_load_host
-out=$(host_pr_comment "$pr" "$2") || ship_fail "comment failed" "$out"
+f=$(mktemp) || ship_tooling "cannot write the comment"
+trap 'rm -f "$f"' EXIT
+ship_mark_file "$2" "$f" || ship_tooling "cannot read $2"
+out=$(host_pr_comment "$pr" "$f") || ship_fail "comment failed" "$out"
 printf '%s\n' "$out"
