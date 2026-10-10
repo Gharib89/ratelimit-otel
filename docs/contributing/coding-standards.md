@@ -10,7 +10,7 @@ The standards every change in this repo is reviewed against. The `code-review` s
 - `scripts/release-archive.sh`, per the `archive` gate in `scripts/local-gate.sh`. The release archive is built only mid-release on `main`, so the gate builds it from the checkout and proves its layout check refuses a manifest below the zip root, a missing `hooks/hooks.json`, an included test file, a file name whose version disagrees with the manifest's, and a name that is not `ratelimit-otel-<version>.zip`.
 - `node scripts/set-manifest-version.mjs`, per the `release` gate in `scripts/local-gate.sh`. The manifest writer runs nowhere else until a release fires it, and the way it fails is by writing nothing, so the gate drives it against a throwaway manifest and reads the version back.
 
-All of them run in `scripts/local-gate.sh`. No workflow judges a PR: `.github/workflows/release.yml` is the only one and it runs on `main` after the merge, so a check that does not run in the local gate does not run on a PR at all.
+All of them run in `scripts/local-gate.sh`. No workflow judges a PR: `.github/workflows/release.yml` runs on `main` after the merge, and `.github/workflows/claude-review.yml` posts a review only when someone comments `@claude` and lands no check run, so a check that does not run in the local gate does not run on a PR at all.
 
 ## Written standards
 
