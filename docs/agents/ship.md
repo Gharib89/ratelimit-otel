@@ -89,6 +89,7 @@ Subject constraints: Conventional Commits, the type matching the issue's Kind di
 ## PR
 
 Template: .github/pull_request_template.md
+Merge: on-clean-gate
 
 ## Public surface
 
