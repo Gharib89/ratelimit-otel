@@ -16,9 +16,11 @@ ship_load_host
 url=$(host_pr_get "$pr" | jq -r .url) || ship_tooling "cannot read PR $pr"
 [ -n "$url" ] && [ "$url" != null ] || ship_tooling "cannot read PR $pr"
 line="PR: $url"
+marked=$(ship_mark "$line")
 posted=false
-if ! host_issue_comments "$n" | jq -e --arg l "$line" 'any(.[]; .body == $l)' >/dev/null; then
-  host_issue_comment "$n" "$line" >/dev/null || ship_fail "comment on issue #$n failed"
+# The bare line too: a comment posted before the marker existed is the same line.
+if ! host_issue_comments "$n" | jq -e --arg l "$line" --arg m "$marked" 'any(.[]; .body == $l or .body == $m)' >/dev/null; then
+  host_issue_comment "$n" "$marked" >/dev/null || ship_fail "comment on issue #$n failed"
   posted=true
 fi
 jq -n --argjson n "$n" --argjson pr "$pr" --arg u "$url" --argjson p "$posted" '{issue: $n, pr: $pr, url: $u, posted: $p}'

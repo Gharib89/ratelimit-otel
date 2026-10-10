@@ -2,10 +2,8 @@
 # Azure DevOps adapter: the host_* interface from _lib.sh over the `az` CLI with
 # the azure-devops extension, in preference order: `az repos` / `az boards`
 # where a subcommand exists; `az devops invoke` for what they lack (PR threads,
-# iterations, statuses); `az rest` only where neither reaches, which today is
-# `host_issue_remove_label` alone and is documented at that call. Every host API
-# call goes through the CLI, which holds the credential, so none of them is a
-# curl; the only curl in this file is the installer download in
+# iterations, statuses, the json-patch tag removal). Every host API call goes
+# through the CLI, which holds the credential, so none of them is a curl; the only curl in this file is the installer download in
 # `host_tooling_install`, which is what puts the CLI on the machine. One
 # credential covers the run: `az login` (Entra) or AZURE_DEVOPS_EXT_PAT. Sourced
 # by _lib.sh's ship_load_host; needs SHIP_ORG_URL, SHIP_PROJECT and SHIP_REPO
@@ -57,7 +55,7 @@ host_tooling_reasons() {
 # Azure DevOps repo"); on a developer machine the tooling reasons already name it.
 host_tooling_install() {
   local sudo=""; [ "$(id -u)" -eq 0 ] || sudo="sudo -n"
-  command -v az >/dev/null || curl -fsSL https://aka.ms/InstallAzureCLIDeb | $sudo bash
+  command -v az >/dev/null || curl -fsSL --connect-timeout 30 --max-time 120 https://aka.ms/InstallAzureCLIDeb | $sudo bash
   az extension show --name azure-devops >/dev/null 2>&1 || az extension add --name azure-devops
 }
 # Entra login first; a PAT session has no `az account`, so fall back to the
@@ -128,19 +126,21 @@ host_issue_add_label() {
 # A System.Tags write through `--fields` (an `add` op) merges into the tags
 # already there, so dropping a tag needs a json-patch `replace` with the rest,
 # and dropping the LAST one a `remove`: the server ignores an empty value however
-# it is sent. `az devops invoke` cannot send application/json-patch+json, so every
-# removal is `az rest` on the Entra token: a PAT-only session fails each one and
-# reports false.
+# it is sent. `az devops invoke` cannot reach the work item's PATCH route (it
+# resolves `wit/workItems` to the create route), so the patch rides in a
+# `wit/$batch` request, which works on either credential where `az rest` needs
+# an `az login`. A batch answers 200 whatever its request did, so the request's
+# own code decides.
 host_issue_remove_label() {
-  local cur patch
+  local cur f
   cur=$(host_issue_get "$1") || return 1
   jq -e --arg l "$2" 'any(.labels[]; . == $l)' <<<"$cur" >/dev/null || return 0
-  patch=$(jq -c --arg l "$2" '[.labels[] | select(. != $l)] | join("; ")
+  f=$(mktemp); trap 'rm -f "$f"; trap - RETURN' RETURN
+  jq -c --arg l "$2" --arg u "/_apis/wit/workitems/$1?api-version=7.1" '[.labels[] | select(. != $l)] | join("; ")
     | if . == "" then [{op: "remove", path: "/fields/System.Tags"}]
-      else [{op: "replace", path: "/fields/System.Tags", value: .}] end' <<<"$cur")
-  azx rest --method patch --url "$SHIP_ORG_URL/_apis/wit/workitems/$1?api-version=7.1" \
-    --resource 499b84ac-1321-427f-aa17-267ca6975798 --headers "Content-Type=application/json-patch+json" \
-    --body "$patch" >/dev/null
+      else [{op: "replace", path: "/fields/System.Tags", value: .}] end
+    | [{method: "PATCH", uri: $u, headers: {"Content-Type": "application/json-patch+json"}, body: .}]' <<<"$cur" > "$f"
+  invoke POST wit batch 7.1 --in-file "$f" | jq -e '.value[0].code | . >= 200 and . < 300' >/dev/null
 }
 host_issue_comment() { azx boards work-item update "${ORG[@]}" --id "$1" --discussion "$2" >/dev/null; }
 host_issue_close()   { azx boards work-item update "${ORG[@]}" --id "$1" --state "$ADO_CLOSED" >/dev/null; }
@@ -291,6 +291,9 @@ host_pr_request_review() { # <pr> <login>
   jq -n --argjson ok "$ok" --argjson rb "$rb" --arg l "$2" --arg now "$now" \
     '{requested: ($ok and ([$rb[] | ascii_downcase] | index($l | ascii_downcase) != null)), readback: $rb, requested_at: $now}'
 }
+# Azure DevOps stamps request-review's `requested_at` off the wall clock and keeps
+# no event to read it back from, so there is no instant to give.
+host_pr_requested_at() { return 1; }
 # A closed thread: visible, and a comment-resolution policy reads it as settled.
 host_pr_comment() { # <pr> <body-file>
   local f out; f=$(mktemp); trap 'rm -f "$f"; trap - RETURN' RETURN
@@ -414,6 +417,13 @@ host_issues_ready() { # <label>
 host_workflow_runs() { return 1; } # <workflow-file> <since-iso>
 # With no awaited run there is no run whose denied calls to count.
 host_run_denials() { return 1; } # <run-url>
+# No reviewer here posts through a native integration, so there is no activity
+# to read a round's status from.
+host_pr_native_activity() { return 1; } # <pr> <since-iso> <phrase>
+# A policy evaluation here is no job this adapter can re-run yet, so `ci-wait
+# --rerun-failed` reports "unavailable" and the run reads the failure by hand.
+host_check_job() { return 1; } # <pr> <head_sha> <name>
+host_check_rerun() { return 1; } # <job_id>
 
 # Azure DevOps has no Copilot-review ruleset, so there is nothing to contradict
 # a profile with. Non-zero and silent is "not checked", the same answer the
