@@ -47,6 +47,20 @@ Instructions: .github/copilot-instructions.md
 
 The repository ruleset `copilot-review-on-open` carries a `copilot_code_review` rule with `review_on_push: false` scoped to `~DEFAULT_BRANCH`, so the host answers `review_on_push: false` and only `on-request` or `auto-once` is admissible; `on-push` would make preflight refuse this profile. The rule still draws a round when the PR opens, and `on-request` is the trigger that makes that free round the loop's round 1: `Cap: 3` buys the remaining two through the host's request-a-reviewer call, which needs no comment phrase, so `Request:` reads `None.`. `auto-once` would take the opening round and stop there. The rule leaves `review_draft_pull_requests: false`, which costs nothing here because `open-pr` opens non-draft PRs. Flipping `review_on_push` back to `true` is a profile change, not just a setting change.
 
+### Claude Code
+
+Login: claude[bot]
+Trigger: on-request
+Request: comment @claude
+Workflow: .github/workflows/claude-review.yml
+Cap: 2
+Resolve: resolve-thread
+Gating: no
+Fallback-for: Copilot
+Instructions: .github/copilot-instructions.md
+
+Copilot's fallback: a run posts `@claude` only when Copilot exits not reviewed (its quota spent) or is capped with findings. `.github/workflows/claude-review.yml` fires on an `issue_comment` carrying the phrase, so GitHub dispatches it from the default branch only, and it needs the `CLAUDE_CODE_OAUTH_TOKEN` repository secret (`claude setup-token`). It reads Copilot's brief, which points at the coding standards, so both reviewers judge against one file.
+
 ## Coding standards
 
 docs/contributing/coding-standards.md
