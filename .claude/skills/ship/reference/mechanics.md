@@ -18,57 +18,79 @@ runs and how every one of them answers.
 
 ## Which calls need a mechanic
 
-Every host **write**, and every **gating read** (one a phase's `Done when:` or a
-stop row depends on: `preflight`, `poll-pr`, `ci-wait`, `base-fresh` and the
-like), goes through a mechanic, so create-then-verify, the host status on a
-failed write and the same verdict from the same host state all hold. One no
-mechanic performs is a Ship defect. An **informational read**, one no phase or
-stop branches on, may be made directly where no mechanic covers it: through the
-host's REST form (`gh api`, `az rest`), which the cloud sandbox admits where it
-refuses GitHub GraphQL, with one line in the Run file's `## Direct reads`
-naming the call and why. A read made directly in two runs is a candidate
-mechanic. Verification scaffolding sits outside the rule: a scratch issue or
-scratch review thread a `Run:` line sets up by hand, or a throwaway probe PR an
-acceptance criterion asks for, with its pushes and CI cancels, closed unmerged
-before the merge gate.
+Only a **gating call** goes through a mechanic: a host read or write that a
+later phase, a stop row, the merge or the release depends on, so
+create-then-verify, the host status on a failed write and the same verdict from
+the same host state all hold. The gating calls are preflight's admission, the
+claim and its labels (`manage-issue`), `read-issue`, `base-fresh`, `poll-pr` and
+the review round it reads (`request-review`, `reply-thread`, `resolve-thread`),
+`ci-wait`, `open-pr`, the PR's title and body (`update-pr-title`,
+`update-pr-body`, `read-pr`), `merge`, the issue close, `file-issue`, and
+`update-issue-body` with the tracker drafts, and the unattended lane's
+`list-prs` and `select`. One no mechanic performs is a Ship defect, which never
+holds the clean gate on its own: a defect that breaks a gating step already
+fails that step's evidence.
+
+A non-gating call a mechanic already covers (`reflect`, `comment-issue`,
+`comment-pr`, `isolate`, `cleanup`) still runs through it. Any other host call
+is a **direct call**: the run makes it itself, through the host's REST form
+only, `gh api <REST path>` (never its `graphql` endpoint) or `az rest`, which
+the cloud sandbox admits where its proxy refuses GitHub GraphQL with a 403, so
+`gh issue edit` and its kin are out. Log it before making it with `run-file call
+"<why>" --issue <issue> -- gh api ...`, which writes the line under the Run
+file's `## Direct calls` and refuses, exit 1, any other form, and one carrying
+an `Authorization` header, because the line reaches the summary and the host CLI
+authenticates the call itself. A direct call made in two runs, where this run
+can see the other (an earlier unattended summary comment on this repo's PRs
+lists it), is raised as a Ship note: it may earn a mechanic. Verification
+scaffolding sits outside the rule: a scratch issue or scratch review thread a
+`Run:` line sets up by hand, or a throwaway probe PR an acceptance criterion
+asks for, with its pushes and CI cancels, closed unmerged before the merge gate.
+Editing or deleting a comment the run posted is never a direct call: a wrong one
+is corrected by a new one, per
+[review-loop.md](review-loop.md#triage-fix-reply).
 
 ## Which mechanic each phase runs
 
 A phase that names a mechanic runs it rather than re-deriving what it wraps,
 the host adapter it sources (`scripts/host/github.sh` or `scripts/host/ado.sh`,
-chosen from the `origin` remote) included. The table carries no flags, because
-a table goes stale against the script and `--help` does not; the one row that
-is not a mechanic, the repo's own local gate, keeps its flags from the
-local-gate contract.
+chosen from the `origin` remote) included. The one row with flags,
+the repo's own local gate, is not a mechanic: it takes them from the local-gate
+contract.
 
 | Mechanic | Phase |
 |---|---|
 | `prepare` (runs `tooling`, then the Cloud lane `Bootstrap:`) | every run but the no-issue lane's inner one, before `run-file init` |
-| `run-file init` | the first action, placed by SKILL.md's pipeline step |
-| `run-file next`, `run-file open`, `run-file close`, `run-file skip`, `run-file timing` | every phase flip, and the merge summary's `Timing:` row |
-| `run-file gate` | 5, `record` after each gate run; 9, `read` against the PR head and, attended with `Merge: on-clean-gate`, `clean` against the recorded results and `ci-wait` JSON |
+| `run-file init` | the first write, placed by SKILL.md's pipeline step |
+| `run-file next`, `run-file open`, `run-file close`, `run-file skip`, `run-file timing` | every phase flip, and the merge summary's `Timing` item |
+| `run-file gate` | 5, `record` after each gate run; 9, `read` against the PR head, `summary` for the attended summary's `Unmet criteria` and `Clean gate held by` lines (the saved `ci-wait.json` and `read-pr`'s head), and, attended with `Merge: on-clean-gate` or in the inline lane, `clean` against the recorded results and `ci-wait` JSON |
+| `run-file close 5` | 5, refused while a `## Criteria` entry has no `Criterion` line or a placeholder `not met`; a criterion settling later is written `not met: <outstanding work and the step that settles it>` |
 | `run-file grade` | 2, the version grade `open-pr` and `update-pr-title` hold the title type to |
 | `preflight` | 0 |
-| `read-issue` | 0 |
+| `read-issue` | 0; an issue's run reads it before `run-file init`, and 0 reuses that read |
 | `isolate` | 0 |
 | `manage-issue` | 1; any stop after the claim; 3, to close a scratch issue a verification created; 9 |
 | `file-issue` | 2, 4, 7; 9 with `--repo`, per Ship defect draft, on the human's word |
-| `dropped-lines` | 4, the removed blocks with no new home, each owed a `Dropped:` line |
+| `dropped-lines` | 4, the removed blocks with no new home, for the self-review to weigh |
 | `revert-red` | 4, a new test run with its fix reverted, through `run-file prove` |
-| `run-file prove` | 4, per test file the diff adds or changes, writing its red `Reverted-fix:` line |
-| `run-file probe` | 4, per `Declined: <ref>: claim:` decline, writing its `Probe:` line |
+| `run-file prove` | 4, per test file the diff adds or changes, writing its red `Reverted-fix:` line; 7, a review fix with `--fix <commit>` |
+| `run-file ran` | 3, per verification as its `Run:` line ends, stamping the head it ran at |
+| `run-file probe` | 4, a decline's claim, run and recorded as a `Probe:` line |
+| `run-file call` | any phase, before each direct call, writing its `## Direct calls` line |
+| `run-file note` | any phase, for each attested line (`Round:`, `Stop:`, `Past-cap:`, `Docs-only:`, `Criterion`, `Noted:`, `Filed:`), one line each, appended under its section |
 | `base-fresh` | 5, and after every conflict resolution |
 | `<Location:>` from the profile `[--small <node>] [--base <ref>]` | 5 (the repo's own local gate) |
 | `open-pr` | 6 |
 | `reflect` | 6 |
 | `update-pr-title` | 6, 7, 9 |
-| `read-pr` | 6 and 7, reading a PR back after a title or body write; its `outline_missing` is 7's check on the Change outline |
+| `read-pr` | 6 and 7, reading a PR back after a title or body write; 9, the `head_sha` the gate reads; its `outline_missing` is 7's check on the Change outline |
+| `protections` | 9, the summary's `Host protections` line; read-only, never a stop |
 | `poll-pr` | 7, 8 |
 | `request-review` | 7 |
 | `comment-issue` | 2, 4, 7 |
 | `comment-pr` | 7, 9 |
 | `reply-thread` | 7 |
-| `update-pr-body` | 7 |
+| `update-pr-body` | 7; 9, a Ship defect or Ship note met after phase 7 |
 | `update-issue-body` | 1, once per section an anchor the tree contradicts sits in; 9, after `merge` answers `merged: true`, once per tracker draft |
 | `resolve-thread` | 7 |
 | `ci-wait` | 8 |
@@ -111,10 +133,12 @@ heading counts only at column 0, outside a fence and outside a `<details>`
 record: a line opening on `<details>` or `<details ...>` at column 0 through
 its matching line opening on `</details>`, nesting counted. The record's `## `
 lines are no section to `--section`, to `--preamble`'s boundary or to the
-`sections` list. A section write replaces the section's prose and carries every
-record in its old content through, verbatim and in order, below the new
-content, so no write deletes one. A `## <name>` found only inside a record is
-an absent section, created at the end. A body file that ends inside an open
+`sections` list. A section write replaces the section's prose and, by default
+in both mechanics, carries every record in its old content through, verbatim
+and in order, below the new content. `update-pr-body --section <name>
+--drop-records` skips that carry, so the body file is all the section keeps;
+`update-issue-body` has no such flag. A `## <name>` found only inside a record
+is an absent section, created at the end. A body file that ends inside an open
 fence or record is refused, exit 2.
 
 ## The vocabulary a read comes back in
@@ -123,14 +147,9 @@ Reads come back in one vocabulary on both hosts: checks
 `pending|success|failure`, mergeable `clean|conflict|unknown`, review
 `approved|changes|comment`, and threads as `resolved: true|false` per thread, or
 the whole `threads` field as the string `"unavailable"` when the state could not
-be read. `read-issue` marks each comment `ship: true|false`, true on one Ship
-posted, which ends with a hidden `<span data-ship=1></span>`; `read-pr` adds the
-body's `headings` and the PR template's headings it is `missing`. A thread's
+be read. A thread's
 `id` is what `reply-thread` and `resolve-thread` take (on GitHub, the thread's
 root review comment id, as a string).
-
-Run mechanics **inline**: they project their own output, so a subagent there
-burns budget to relay what an exit code already says.
 
 ## Waits past 540 s
 
@@ -142,11 +161,9 @@ and deadline; repeat until an answer arrives without `pending`. A pending answer
 is not a closed window, so never read it as `silent`. Both waits hold for the
 expected head, `--sha <sha>` else the worktree's `HEAD` when it is on the PR's
 branch, so a read straight after a push never grades the previous head: a
-`timeout` whose `head_sha` is not that head means the host never showed the
-push, so confirm it landed, then re-run. Run either wait in the Bash tool's
+`ci-wait` `timeout`, or a `poll-pr` `not_reviewed: unreachable` with `landed_by`
+null, whose `head_sha` is not that head means the host never showed the push, so
+confirm it landed, then re-run. Run either wait in the Bash tool's
 background mode when the run has other work meanwhile, its completion
 notification resuming the run, and start `ci-wait <pr>` that way at PR open,
-alongside the first reviewer poll, since CI runs from there. Inside a window a
-read that fails with no HTTP status is no answer yet: three in a row,
-or the deadline passing while reads still fail, end the call with exit 2, and a
-read the host refused with a status ends it at once.
+alongside the first reviewer poll, since CI runs from there.

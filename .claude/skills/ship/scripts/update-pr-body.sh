@@ -3,7 +3,7 @@
 # `## <section>`, creating the section at the end when the body has none, or the
 # PREAMBLE, everything above the first `## ` heading.
 #
-#   update-pr-body <pr> --section <name> --body-file <path>
+#   update-pr-body <pr> --section <name> [--drop-records] --body-file <path>
 #   update-pr-body <pr> --preamble      --body-file <path>
 #
 # The two are exclusive, and one is required: they are the two halves of a body,
@@ -19,9 +19,16 @@
 #
 # A `<details>` block at column 0 is a `<details>` record (a folded changelog,
 # for example): its `## ` lines are not headings to either mode or to the
-# `sections` list, and a section write keeps every record in the old content,
-# verbatim, below the new content (`ship_inert` in _lib.sh). A body file ending
-# inside an open one is refused like an open fence.
+# `sections` list, and a section write by default keeps every record in the old
+# content, verbatim, below the new content (`ship_inert` in _lib.sh). A body
+# file ending inside an open one is refused like an open fence.
+#
+# `--drop-records` (with `--section` only, a usage error with `--preamble`): the
+# section's old records are not carried, so the body file's content is all the
+# section keeps. It is how a section whose body file carries its own `<details>`
+# block is rewritten a second time without the first block surviving beneath the
+# new one. Without it the carry is unchanged, the same one `update-issue-body`
+# keeps for a phase-1 original in a record.
 #
 # `--preamble`: the body file is the whole preamble. A preamble is always there,
 # empty at the emptiest, so it is always replaced and the create path is unused.
@@ -45,28 +52,39 @@
 # the preamble is by definition what sits above the first heading, so a heading
 # in it would open a section the write then puts the carried closing line inside.
 #
+# The repo's own body checker, the `Body-check:` line under the profile's `## PR`
+# (a path from the checkout root, run with the new body's file as its one
+# argument), runs on the body this would publish, before the host write: exit 0
+# publishes, exit 1 refuses with the checker's stdout in the error, and any other
+# exit is tooling with its stderr, each capped at its last 40 lines. No profile, no line or `None.` publishes
+# unchecked. A body already failing the checker for a part this write does not
+# touch is refused too: it would fail the repo's CI as it stands.
+#
 # stdout: {pr, section, replaced, created, sections[]}
 #         {pr, section: null, preamble: true, replaced, created, sections[]}
 #   sections[]: the `## ` headings of the body AFTER the write, so a swallowed
 #   section is visible in the verdict rather than in a review eight minutes later.
-# exit: 0 · 1 update failed, with the host's status where there was one · 2 usage
+# exit: 0 · 1 update failed, with the host's status where there was one, or the
+#   body checker refused · 2 usage, a body checker that could not run, or a
+#   profile that exists and cannot be read
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
-usage='usage: update-pr-body <pr> (--section <name> | --preamble) --body-file <path>'
+usage='usage: update-pr-body <pr> (--section <name> [--drop-records] | --preamble) --body-file <path>'
 ship_help "$usage" "$@"
 ship_args "$usage" pr "$@"
 pr=$1; shift
-section=""; preamble=false; file=""
+section=""; preamble=false; drop=""; file=""
 while [ $# -gt 0 ]; do
   case $1 in
     --section) case ${2:-} in ""|-*) ship_tooling "$usage" ;; esac; section=$2; shift 2 ;;
     --preamble) preamble=true; shift ;;
+    --drop-records) drop=drop; shift ;;
     --body-file) case ${2:-} in ""|-*) ship_tooling "$usage" ;; esac; file=$2; shift 2 ;;
     *) ship_tooling "unknown flag: $1" ;;
   esac
 done
 if [ "$preamble" = true ]; then
-  [ -z "$section" ] || ship_tooling "$usage"
+  [ -z "$section" ] && [ -z "$drop" ] || ship_tooling "$usage"
 else
   [ -n "$section" ] || ship_tooling "$usage"
 fi
@@ -87,11 +105,12 @@ new=$(mktemp); trap 'rm -f "$new"' EXIT
 if [ "$preamble" = true ]; then
   ship_body_replace_preamble "$body" "$file" > "$new"
   replaced=true; created=false
-elif ship_body_replace_section "$body" "$section" "$file" > "$new"; then
+elif ship_body_replace_section "$body" "$section" "$file" "$drop" > "$new"; then
   replaced=true; created=false
 else
   replaced=false; created=true
 fi
+ship_require_body_check "$new"
 answer=$(host_pr_set_body "$pr" "$new") || ship_fail "PR body update failed" "$answer"
 sections=$(ship_body_headings "$(cat "$new")")
 jq -n --argjson pr "$pr" --arg s "$section" --argjson p "$preamble" \

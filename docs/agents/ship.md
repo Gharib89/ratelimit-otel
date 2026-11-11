@@ -1,6 +1,6 @@
 # Ship profile
 
-Schema: 4
+Schema: 5
 
 Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship` checks at preflight; only a `setup-skills` re-run moves it.
 
@@ -32,6 +32,8 @@ Push policy: Default.
 The repo is public, so Actions minutes are unmetered and nothing argues for batching pushes. Every check a PR is judged on therefore runs in the local gate. `.github/workflows/release.yml` is deliberately not a leg: it runs on `main` after the merge, a ref no PR head shares, so a `Legs:` entry naming it would leave `ci-wait` waiting for a check that never arrives. When a `pull_request` workflow lands, re-run `/setup-skills` so the legs and any `defer-to-ci` verification move together.
 
 ## Reviewers
+
+Self-review cap: 3
 
 ### Copilot
 
