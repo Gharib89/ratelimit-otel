@@ -1,6 +1,6 @@
 # Ship profile
 
-Schema: 4
+Schema: 5
 
 Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship` checks at preflight; only a `setup-skills` re-run moves it.
 
@@ -10,22 +10,18 @@ Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` head
 
 Host: <github | ado>
 
-<!-- Derived from the origin remote and cross-checked at preflight. Org, project and repo always derive from the remote. -->
-
 ## Worktree
 
 Carry: <comma-separated gitignored files copied one-way into the worktree, or None.>
 Bootstrap: <command run once after isolate in every lane, or None.>
 
-<!-- Location is core: <parent>/<repo>.worktrees/<slug>-<issue>. Only small dotfiles belong on Carry (.env, *.local); dependency install belongs to the local gate. -->
+<!-- Only small dotfiles belong on Carry (.env, *.local); dependency install belongs to the local gate. -->
 
 ## Local gate
 
 Location: <scripts/local-gate.sh>
 Small node: <the syntax of one test node for --small, with an example; then a docs-class line giving the path of the changed document, with an example>
 Tripwires: <anything that must run before the gate, e.g. a bundle rebuild, or None.>
-
-<!-- Output contract, flags and statuses are core. -->
 
 ## CI
 
@@ -37,7 +33,9 @@ Push policy: <e.g. one push per review round; minutes are metered, or Default.>
 
 ## Reviewers
 
-<!-- Zero or more `### <name>` blocks, or the single line `None.` Trigger fixes how a round starts; brand decides nothing. -->
+Self-review cap: <the most phase-4 self-review rounds a run spends, a whole number of 1 or more; 3 by default>
+
+<!-- Below the `Self-review cap:` line, zero or more `### <name>` blocks, or the single line `None.` Trigger fixes how a round starts; brand decides nothing. -->
 
 ### <reviewer name>
 
@@ -48,7 +46,7 @@ Workflow: <`comment <phrase>` only: the repo-relative path, from the checkout ro
 Cap: <on-request: max rounds, required, no default; on-push: max rounds, or None. for an uncapped loop; auto-once: None.>
 Resolve: <on-push and on-request: how a dispositioned thread is resolved, else None.>
 Gating: <yes | no>
-Fallback-for: <the reviewer this one stands in for, driven only when that reviewer exits not reviewed or is capped with findings (its Cap: spent, the last round's fixes changing the tree); on-request only, else None.>
+Fallback-for: <the reviewer this one stands in for, driven only when that reviewer exits not reviewed, is capped with findings (its Cap: spent, the last round's fixes changing the tree) or stops not landed (a later round did not land after a fix changed the tree); on-request only, else None.>
 Instructions: <path of the file this reviewer reads, or None.>
 
 ## Coding standards
@@ -59,7 +57,7 @@ Instructions: <path of the file this reviewer reads, or None.>
 
 ## Verification
 
-<!-- Zero or more `### <name>` blocks with exactly these seven lines (and an optional `Timebox:` line after `Claims to probe:`), or the single line `None.` -->
+<!-- Zero or more `### <name>` blocks with exactly these seven lines (and optional `Timebox:` and `Paths:` lines after `Claims to probe:`), or the single line `None.` -->
 
 ### <verification name>
 
@@ -82,7 +80,7 @@ Subject constraints: <reserved prefixes or formats for the squash subject, or No
 
 Template: <path; fill it through its own headings rather than a raw body that bypasses it> | None.
 
-<!-- Optional `Merge: on-clean-gate` opts an attended run into merging on a clean gate. An absent line or `Merge: Default.` keeps the human stop; re-runs preserve the choice and leave an absent line absent. -->
+<!-- Optional: `Merge: on-clean-gate` or `Merge: Default.`, and `Body-check: <path>` for the repo's own body checker, per profile-schema.md's Optional lines. -->
 
 <!-- `Closes #<issue>` and the seven sections `## Why the change`, `## Change outline`, `## Special things to note`, `## Needs attention`, `## Verification`, `## Review` and `## Attribution` are core in every repo, in that order. The closing reference sits above the first `## ` heading, where a section rewrite cannot reach it. -->
 
